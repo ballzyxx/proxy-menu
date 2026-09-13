@@ -52,10 +52,39 @@ module.exports = function ProxyMenu(mod) {
 		night: "EX_Halloween_T42_AEROSet.AERO.EX_Halloween_Inside_Aeroset",
 		dark: "Kubel_Fortress_Pegasus_AERO.AERO.Kubel_Fortress_Pegasus_AERO"
 	};
-	const isAgaia = mod.connection.metadata.serverList[mod.serverId].name.includes("Agaia");
-	const sanctionedNames = ["store", "sstore", "ssstore", "vstore", "fstore", "ffstore", "fishstore", "boxfstore", "acraft", "scraft", "pcraft", "ecraft", "jcraft"];
 	const liveNpc = new Map();
-	let lastMerchant = null;
+	const hubNpc = new Map();
+	const HUB_ZONES = new Set([13, 58, 63, 72, 84, 183, 381, 599, 2800, 3051]);
+	const SHOP_BY_VALUE = {
+		70310: "store",
+		16063: "store",
+		16072: "store",
+		16081: "store",
+		16084: "store",
+		16091: "store",
+		16092: "store",
+		58001: "store",
+		59901: "store",
+		2851665: "store",
+		250: "sstore",
+		58002: "sstore",
+		111: "ssstore",
+		600: "vstore",
+		16094: "fstore",
+		16096: "fstore",
+		16095: "ffstore",
+		1000: "fishstore",
+		1001: "boxfstore",
+		141: "bel",
+		609: "vng",
+		6090: "vgc",
+		6112: "guard",
+		193: "acraft",
+		190: "scraft",
+		191: "pcraft",
+		192: "ecraft",
+		195: "jcraft"
+	};
 
 	const gui = {
 		parse(array, title, d = "") {
@@ -336,46 +365,64 @@ module.exports = function ProxyMenu(mod) {
 		}
 	});
 
+	function toEntityId(id) {
+		if (id == null || id === "") return null;
+		if (typeof id === "bigint") return id === 0n ? null : id;
+		if (typeof id === "string") {
+			const s = id.startsWith("BIGINT:") ? id.slice(7) : id;
+			if (!s || s === "0") return null;
+			try {
+				const n = BigInt(s);
+				return n === 0n ? null : n;
+			} catch (_) {
+				return null;
+			}
+		}
+		const n = Number(id);
+		if (!Number.isFinite(n) || n === 0) return null;
+		return n;
+	}
+
+	function shopNameForValue(value) {
+		const v = Number(value);
+		if (!Number.isFinite(v) || v <= 0) return null;
+		if (SHOP_BY_VALUE[v]) return SHOP_BY_VALUE[v];
+		if (v >= 16000 && v <= 17000) return "store";
+		return null;
+	}
+
+	function rememberShop(name, target, value, zone) {
+		if (!name || !mod.settings.npc[name]) return;
+		const id = toEntityId(target);
+		const v = Number(value);
+		if (id == null || !Number.isFinite(v) || v <= 0) return;
+		const entry = { gameId: id, value: v };
+		liveNpc.set(name, entry);
+		const hub = zone == null || HUB_ZONES.has(Number(zone));
+		if (hub || !hubNpc.has(name)) {
+			hubNpc.set(name, entry);
+			mod.settings.npc[name].gameId = id;
+			mod.settings.npc[name].value = v;
+		}
+	}
+
+	Object.entries(mod.settings.npc || {}).forEach(([name, npc]) => {
+		const id = toEntityId(npc && npc.gameId);
+		const v = Number(npc && npc.value);
+		if (id != null && Number.isFinite(v) && v > 0) hubNpc.set(name, { gameId: id, value: v });
+	});
+
 	mod.hook("S_SPAWN_NPC", mod.majorPatchVersion >= 101 ? 12 : 11, event => {
 		Object.entries(mod.settings.npc).forEach(([name, npc]) => {
 			if (npc.opts === undefined) return;
 			const opt = npc.opts.find(option => option.templateId === event.templateId && option.huntingZoneId === event.huntingZoneId);
-
-			if (opt) {
-				mod.settings.npc[name].value = opt._value;
-				mod.settings.npc[name].gameId = event.gameId;
-				liveNpc.set(name, { gameId: event.gameId, value: opt._value });
-			}
+			if (opt) rememberShop(name, event.gameId, opt._value, event.huntingZoneId);
 		});
 	});
 
 	mod.hook("S_LOAD_TOPO", "raw", () => {
 		liveNpc.clear();
-		if (lastMerchant) lastMerchant.target = null;
 	});
-
-	const NOT_GENERAL_SHOP = new Set([250, 111, 141, 609, 6090, 6112, 16094, 16095, 16096]);
-
-	function isGeneralShopValue(value) {
-		const v = Number(value);
-		if (!Number.isFinite(v) || v <= 0 || NOT_GENERAL_SHOP.has(v)) return false;
-		if (v >= 16000 && v <= 17000) return true;
-		return v === 58001 || v === 59901 || v === 70310 || v === 2851665;
-	}
-
-	function rememberMerchant(target, value, why) {
-		if (target == null || value == null) return;
-		const v = Number(value);
-		if (!isGeneralShopValue(v)) return;
-		lastMerchant = { target, value: v };
-		if (mod.settings.npc.store) {
-			mod.settings.npc.store.gameId = target;
-			mod.settings.npc.store.value = v;
-		}
-		liveNpc.set("store", { gameId: target, value: v });
-		mod.command.message(`Merchant learned (${why}): shop ${v}`);
-		try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
-	}
 
 	function hookDialog(event) {
 		const optType = event.options && event.options[0] && event.options[0].type;
@@ -388,7 +435,11 @@ module.exports = function ProxyMenu(mod) {
 				`   "huntingZoneId": ${event.huntingZoneId}`
 			];
 		}
-		if (event.gameId != null && optType != null) rememberMerchant(event.gameId, optType, "dialog");
+		const options = event.options || [];
+		for (let i = 0; i < options.length; i++) {
+			const name = shopNameForValue(options[i] && options[i].type);
+			if (name) rememberShop(name, event.gameId, options[i].type, event.huntingZoneId);
+		}
 	}
 	try {
 		mod.hook("S_DIALOG", "*", hookDialog);
@@ -397,9 +448,9 @@ module.exports = function ProxyMenu(mod) {
 	}
 
 	mod.hook("C_REQUEST_CONTRACT", 50, { order: -20, filter: { fake: false } }, event => {
-		if (merchantProbe) return;
-		if (Number(event.type) !== 9) return;
-		rememberMerchant(event.target, event.value, "shop click");
+		const name = shopNameForValue(event.value);
+		if (!name) return;
+		rememberShop(name, event.target, event.value, null);
 	});
 
 	mod.hook("C_PLAYER_LOCATION", 5, event => {
@@ -586,96 +637,71 @@ module.exports = function ProxyMenu(mod) {
 		}
 	};
 
-	function sendShopContract(target, value) {
+	const SHOP_DEFAULTS = {
+		store: 70310,
+		sstore: 250,
+		ssstore: 111,
+		vstore: 600,
+		fstore: 16094,
+		ffstore: 16095,
+		fishstore: 1000,
+		boxfstore: 1001,
+		acraft: 193,
+		scraft: 190,
+		pcraft: 191,
+		ecraft: 192,
+		jcraft: 195,
+		bel: 141,
+		vng: 609,
+		vgc: 6090,
+		guard: 6112,
+		bank: 1,
+		gbank: 3,
+		pbank: 9,
+		cbank: 12
+	};
+
+	function shopValue(name, npc) {
+		const saved = Number(npc && npc.value);
+		if (Number.isFinite(saved) && saved > 0) return saved;
+		if (npc && npc.opts && npc.opts[0] && npc.opts[0]._value) return Number(npc.opts[0]._value);
+		return Number(SHOP_DEFAULTS[name]) || 0;
+	}
+
+	function resolveShop(name, npc) {
+		const live = liveNpc.get(name);
+		if (live && toEntityId(live.gameId) != null) {
+			return { gameId: toEntityId(live.gameId), value: Number(live.value) || shopValue(name, npc) };
+		}
+		const hub = hubNpc.get(name);
+		if (hub && toEntityId(hub.gameId) != null) {
+			return { gameId: toEntityId(hub.gameId), value: Number(hub.value) || shopValue(name, npc) };
+		}
+		return { gameId: toEntityId(npc && npc.gameId), value: shopValue(name, npc) };
+	}
+
+	function sendShopContract(type, target, value) {
+		const v = Number(value) || 0;
 		const buffer = Buffer.alloc(4);
-		buffer.writeUInt32LE(Number(value) || 0);
+		buffer.writeUInt32LE(v >>> 0);
 		mod.send("C_REQUEST_CONTRACT", 50, {
-			type: 9,
+			type,
 			target: target != null ? target : 0,
-			value,
+			value: v,
 			name: "",
 			data: buffer
 		});
 	}
 
-	function openNpcContract(name) {
+	function openRemoteNpc(name) {
 		const npc = mod.settings.npc[name];
 		if (!npc) return;
-		let target = npc.gameId;
-		let value = npc.value;
-		if (npc.type === 9) {
-			const live = liveNpc.get(name);
-			if (live) {
-				target = live.gameId;
-				if (live.value != null) value = live.value;
-			}
-		}
-		const buffer = Buffer.alloc(4);
-		buffer.writeUInt32LE(Number(value) || 0);
-		mod.send("C_REQUEST_CONTRACT", 50, {
-			type: npc.type,
-			target,
-			value,
-			name: "",
-			data: buffer
-		});
-	}
-
-	// 70310 is Highwatch. This private city (2800) has S.store (250) but
-	// that NPC will not serve 70310. Try city catalogs with target 0 first.
-	const MERCHANT_CATALOGS = [16063, 16091, 16072, 16084, 16081, 58001, 59901, 70310];
-	let merchantProbe = null;
-
-	function openMerchant() {
-		if (lastMerchant && lastMerchant.target != null && lastMerchant.value != null) {
-			sendShopContract(lastMerchant.target, lastMerchant.value);
-			return;
-		}
-		const catalogs = [];
-		const saved = Number(mod.settings.npc.store && mod.settings.npc.store.value);
-		if (Number.isFinite(saved) && saved > 0) catalogs.push(saved);
-		for (const id of MERCHANT_CATALOGS) {
-			if (!catalogs.includes(id)) catalogs.push(id);
-		}
-		const targets = [];
-		if (mod.settings.npc.store && mod.settings.npc.store.gameId != null) {
-			targets.push(mod.settings.npc.store.gameId);
-		}
-		for (const [n, info] of liveNpc) {
-			if (mod.settings.npc[n] && mod.settings.npc[n].type === 9 && info.gameId != null) {
-				if (!targets.includes(info.gameId)) targets.push(info.gameId);
-			}
-		}
-		if (!targets.length) targets.push(0);
-		if (merchantProbe && merchantProbe.timer) {
-			try { mod.clearTimeout(merchantProbe.timer); } catch (_) {}
-		}
-		const jobs = [];
-		for (const target of targets) {
-			for (const value of catalogs) jobs.push({ target, value });
-		}
-		merchantProbe = { jobs, i: 0, ok: false, timer: null };
-		const step = () => {
-			if (!merchantProbe || merchantProbe.ok) return;
-			if (merchantProbe.i >= merchantProbe.jobs.length) {
-				mod.command.message("Merchant: talk to the Allemantheia merchant and click Shop, then try again.");
-				merchantProbe = null;
-				return;
-			}
-			const job = merchantProbe.jobs[merchantProbe.i++];
-			sendShopContract(job.target, job.value);
-			merchantProbe.timer = mod.setTimeout(step, 220);
-		};
-		step();
+		const shop = resolveShop(name, npc);
+		sendShopContract(npc.type, shop.gameId, shop.value);
 	}
 
 	Object.keys(mod.settings.npc).forEach(name => {
-		if (isAgaia && sanctionedNames.includes(name)) return;
-		if (name === "store") {
-			commands[name] = () => openMerchant();
-			return;
-		}
-		commands[name] = () => openNpcContract(name);
+		commands[name] = () => openRemoteNpc(name);
 	});
 
 	mod.command.add(COMMAND, commands);
@@ -827,20 +853,6 @@ module.exports = function ProxyMenu(mod) {
 	mod.hook("S_REQUEST_CONTRACT", 1, e => {
 		contract = e.id;
 		contractType = e.type;
-		if (merchantProbe && e.type === 9) {
-			merchantProbe.ok = true;
-			if (merchantProbe.timer) {
-				try { mod.clearTimeout(merchantProbe.timer); } catch (_) {}
-			}
-			const used = merchantProbe.jobs[merchantProbe.i - 1];
-			if (used && mod.settings.npc.store) {
-				mod.settings.npc.store.value = used.value;
-				mod.settings.npc.store.gameId = used.target;
-				lastMerchant = { target: used.target, value: used.value };
-				try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
-			}
-			merchantProbe = null;
-		}
 		if (!debug) return;
 		debugData.push(`   "type": ${e.type}`);
 		debugData.forEach(data => {
