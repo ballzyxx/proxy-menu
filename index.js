@@ -433,7 +433,7 @@ module.exports = function ProxyMenu(mod) {
 		const bag = shopBag();
 		if (!bag) return;
 		Object.entries(bag).forEach(([name, e]) => {
-			if (!e || !e.hub || !mod.settings.npc[name]) return;
+			if (!e || !mod.settings.npc[name]) return;
 			const id = toEntityId(e.gameId);
 			const v = Number(e.value);
 			if (id == null || !Number.isFinite(v) || v <= 0) return;
@@ -452,14 +452,15 @@ module.exports = function ProxyMenu(mod) {
 
 	function persistHubShop(name, target, value, zone) {
 		noteLive(name, target, value);
-		if (!REMOTE_HUB_ZONES.has(Number(zone))) return;
 		const id = toEntityId(target);
 		const v = Number(value);
 		if (id == null || !Number.isFinite(v) || v <= 0) return;
+		const isHub = REMOTE_HUB_ZONES.has(Number(zone));
+		const bag = shopBag();
+		if (!isHub && bag && bag[name] && bag[name].hub) return;
 		mod.settings.npc[name].gameId = id;
 		mod.settings.npc[name].value = v;
-		const bag = shopBag();
-		if (bag) bag[name] = { gameId: String(id), value: v, hub: true };
+		if (bag) bag[name] = { gameId: String(id), value: v, hub: !!isHub };
 		try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
 	}
 
@@ -483,7 +484,10 @@ module.exports = function ProxyMenu(mod) {
 		applyPersistedShops();
 		Object.entries(mod.settings.npc).forEach(([name, npc]) => {
 			if (npc.opts === undefined) return;
-			const opt = npc.opts.find(option => option.templateId === event.templateId && option.huntingZoneId === event.huntingZoneId);
+			let opt = npc.opts.find(option => option.templateId === event.templateId && option.huntingZoneId === event.huntingZoneId);
+			if (!opt && REMOTE_HUB_ZONES.has(Number(event.huntingZoneId))) {
+				opt = npc.opts.find(option => option.templateId === event.templateId);
+			}
 			if (opt) persistHubShop(name, event.gameId, opt._value, event.huntingZoneId);
 		});
 	});
@@ -506,7 +510,7 @@ module.exports = function ProxyMenu(mod) {
 		const options = event.options || [];
 		for (let i = 0; i < options.length; i++) {
 			const name = shopNameForValue(options[i] && options[i].type);
-			if (name) noteLive(name, event.gameId, options[i].type);
+			if (name) persistHubShop(name, event.gameId, options[i].type, event.huntingZoneId);
 		}
 	}
 	try {
