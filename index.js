@@ -708,8 +708,10 @@ module.exports = function ProxyMenu(mod) {
 		if (!npc) return;
 		applyPersistedShops();
 		const live = liveNpc.get(name);
-		const value = Number((live && live.value) || npc.value || SHOP_DEFAULTS[name]) || 0;
-		const target = toEntityId(live && live.gameId) || toEntityId(npc.gameId) || 0;
+		const bag = shopBag();
+		const saved = bag && bag[name];
+		const value = Number((live && live.value) || (saved && saved.value) || SHOP_DEFAULTS[name] || npc.value) || 0;
+		const target = toEntityId(live && live.gameId) || toEntityId(saved && saved.gameId) || 0;
 		const buffer = Buffer.alloc(4);
 		buffer.writeUInt32LE(value >>> 0);
 		mod.send("C_REQUEST_CONTRACT", 50, {
