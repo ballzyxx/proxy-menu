@@ -432,10 +432,17 @@ module.exports = function ProxyMenu(mod) {
 		if (key === lastServerKey) return;
 		lastServerKey = key;
 		hubNpc.clear();
-		if (!key) return;
-		Object.entries(shopBag()).forEach(([name, e]) => {
-			const id = toEntityId(e && e.gameId);
-			const v = Number(e && e.value);
+		if (key) {
+			Object.entries(shopBag()).forEach(([name, e]) => {
+				const id = toEntityId(e && e.gameId);
+				const v = Number(e && e.value);
+				if (id != null && Number.isFinite(v) && v > 0) hubNpc.set(name, { gameId: id, value: v });
+			});
+		}
+		Object.entries(mod.settings.npc || {}).forEach(([name, npc]) => {
+			if (hubNpc.has(name)) return;
+			const id = toEntityId(npc && npc.gameId);
+			const v = Number(npc && npc.value);
 			if (id != null && Number.isFinite(v) && v > 0) hubNpc.set(name, { gameId: id, value: v });
 		});
 	}
@@ -468,6 +475,8 @@ module.exports = function ProxyMenu(mod) {
 		const hub = zone == null || HUB_ZONES.has(Number(zone));
 		if (!hub && hubNpc.has(name)) return;
 		hubNpc.set(name, entry);
+		mod.settings.npc[name].gameId = id;
+		mod.settings.npc[name].value = v;
 		if (currentServerId()) {
 			shopBag()[name] = { gameId: String(id), value: v };
 			try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
@@ -719,10 +728,10 @@ module.exports = function ProxyMenu(mod) {
 		refreshServerShops();
 		const hub = hubNpc.get(name);
 		if (hub && Number(hub.value) > 0) return Number(hub.value);
-		const saved = Number(SHOP_DEFAULTS[name]);
+		const saved = Number(npc && npc.value);
 		if (Number.isFinite(saved) && saved > 0) return saved;
 		if (npc && npc.opts && npc.opts[0] && npc.opts[0]._value) return Number(npc.opts[0]._value);
-		return Number(npc && npc.value) || 0;
+		return Number(SHOP_DEFAULTS[name]) || 0;
 	}
 
 	function resolveShop(name, npc) {
@@ -735,7 +744,7 @@ module.exports = function ProxyMenu(mod) {
 		if (hub && toEntityId(hub.gameId) != null) {
 			return { gameId: toEntityId(hub.gameId), value: Number(hub.value) || shopValue(name, npc) };
 		}
-		return { gameId: 0, value: shopValue(name, npc) };
+		return { gameId: toEntityId(npc && npc.gameId) || 0, value: shopValue(name, npc) };
 	}
 
 	function sendShopContract(type, target, value) {
