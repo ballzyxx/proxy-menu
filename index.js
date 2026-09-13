@@ -53,9 +53,8 @@ module.exports = function ProxyMenu(mod) {
 		dark: "Kubel_Fortress_Pegasus_AERO.AERO.Kubel_Fortress_Pegasus_AERO"
 	};
 	const liveNpc = new Map();
-	const hubNpc = new Map();
 	let lastServerKey = null;
-	const HUB_ZONES = new Set([13, 58, 63, 72, 84, 183, 381, 599, 2800, 3051]);
+	const REMOTE_HUB_ZONES = new Set([183, 2800]);
 	const SHOP_DEFAULTS = {
 		store: 70310,
 		sstore: 250,
@@ -422,29 +421,46 @@ module.exports = function ProxyMenu(mod) {
 		if (!mod.settings.shopByServer || typeof mod.settings.shopByServer !== "object")
 			mod.settings.shopByServer = {};
 		const key = currentServerId();
-		if (!key) return {};
+		if (!key) return null;
 		if (!mod.settings.shopByServer[key]) mod.settings.shopByServer[key] = {};
 		return mod.settings.shopByServer[key];
 	}
 
-	function refreshServerShops() {
+	function applyPersistedShops() {
 		const key = currentServerId();
 		if (key === lastServerKey) return;
 		lastServerKey = key;
-		hubNpc.clear();
-		if (key) {
-			Object.entries(shopBag()).forEach(([name, e]) => {
-				const id = toEntityId(e && e.gameId);
-				const v = Number(e && e.value);
-				if (id != null && Number.isFinite(v) && v > 0) hubNpc.set(name, { gameId: id, value: v });
-			});
-		}
-		Object.entries(mod.settings.npc || {}).forEach(([name, npc]) => {
-			if (hubNpc.has(name)) return;
-			const id = toEntityId(npc && npc.gameId);
-			const v = Number(npc && npc.value);
-			if (id != null && Number.isFinite(v) && v > 0) hubNpc.set(name, { gameId: id, value: v });
+		const bag = shopBag();
+		if (!bag) return;
+		Object.entries(bag).forEach(([name, e]) => {
+			if (!e || !e.hub || !mod.settings.npc[name]) return;
+			const id = toEntityId(e.gameId);
+			const v = Number(e.value);
+			if (id == null || !Number.isFinite(v) || v <= 0) return;
+			mod.settings.npc[name].gameId = id;
+			mod.settings.npc[name].value = v;
 		});
+	}
+
+	function noteLive(name, target, value) {
+		if (!name || !mod.settings.npc[name]) return;
+		const id = toEntityId(target);
+		const v = Number(value);
+		if (id == null || !Number.isFinite(v) || v <= 0) return;
+		liveNpc.set(name, { gameId: id, value: v });
+	}
+
+	function persistHubShop(name, target, value, zone) {
+		noteLive(name, target, value);
+		if (!REMOTE_HUB_ZONES.has(Number(zone))) return;
+		const id = toEntityId(target);
+		const v = Number(value);
+		if (id == null || !Number.isFinite(v) || v <= 0) return;
+		mod.settings.npc[name].gameId = id;
+		mod.settings.npc[name].value = v;
+		const bag = shopBag();
+		if (bag) bag[name] = { gameId: String(id), value: v, hub: true };
+		try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
 	}
 
 	function shopNameForValue(value) {
@@ -455,55 +471,20 @@ module.exports = function ProxyMenu(mod) {
 		return null;
 	}
 
-	function uniqueTemplateShop(templateId) {
-		const names = [];
-		Object.entries(mod.settings.npc || {}).forEach(([name, npc]) => {
-			if ((npc.opts || []).some(opt => opt.templateId === templateId) && !names.includes(name))
-				names.push(name);
-		});
-		return names.length === 1 ? names[0] : null;
-	}
-
-	function rememberShop(name, target, value, zone) {
-		if (!name || !mod.settings.npc[name]) return;
-		const id = toEntityId(target);
-		const v = Number(value);
-		if (id == null || !Number.isFinite(v) || v <= 0) return;
-		const entry = { gameId: id, value: v };
-		liveNpc.set(name, entry);
-		refreshServerShops();
-		const hub = zone == null || HUB_ZONES.has(Number(zone));
-		if (!hub && hubNpc.has(name)) return;
-		hubNpc.set(name, entry);
-		mod.settings.npc[name].gameId = id;
-		mod.settings.npc[name].value = v;
-		if (currentServerId()) {
-			shopBag()[name] = { gameId: String(id), value: v };
-			try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
-		}
-	}
-
-	refreshServerShops();
+	applyPersistedShops();
 	try {
 		mod.game.on("enter_game", () => {
 			lastServerKey = null;
-			refreshServerShops();
+			applyPersistedShops();
 		});
 	} catch (_) {}
 
 	mod.hook("S_SPAWN_NPC", mod.majorPatchVersion >= 101 ? 12 : 11, event => {
-		refreshServerShops();
+		applyPersistedShops();
 		Object.entries(mod.settings.npc).forEach(([name, npc]) => {
 			if (npc.opts === undefined) return;
 			const opt = npc.opts.find(option => option.templateId === event.templateId && option.huntingZoneId === event.huntingZoneId);
-			if (opt) {
-				rememberShop(name, event.gameId, opt._value, event.huntingZoneId);
-				return;
-			}
-			if (uniqueTemplateShop(event.templateId) === name) {
-				const byTemplate = npc.opts.find(option => option.templateId === event.templateId);
-				if (byTemplate) rememberShop(name, event.gameId, byTemplate._value, event.huntingZoneId);
-			}
+			if (opt) persistHubShop(name, event.gameId, opt._value, event.huntingZoneId);
 		});
 	});
 
@@ -525,7 +506,7 @@ module.exports = function ProxyMenu(mod) {
 		const options = event.options || [];
 		for (let i = 0; i < options.length; i++) {
 			const name = shopNameForValue(options[i] && options[i].type);
-			if (name) rememberShop(name, event.gameId, options[i].type, event.huntingZoneId);
+			if (name) noteLive(name, event.gameId, options[i].type);
 		}
 	}
 	try {
@@ -533,12 +514,6 @@ module.exports = function ProxyMenu(mod) {
 	} catch (_) {
 		mod.hook("S_DIALOG", 2, hookDialog);
 	}
-
-	mod.hook("C_REQUEST_CONTRACT", 50, { order: -20, filter: { fake: false } }, event => {
-		const name = shopNameForValue(event.value);
-		if (!name) return;
-		rememberShop(name, event.target, event.value, null);
-	});
 
 	mod.hook("C_PLAYER_LOCATION", 5, event => {
 		if ([0, 1, 5, 6].indexOf(event.type) > -1)
@@ -724,47 +699,22 @@ module.exports = function ProxyMenu(mod) {
 		}
 	};
 
-	function shopValue(name, npc) {
-		refreshServerShops();
-		const hub = hubNpc.get(name);
-		if (hub && Number(hub.value) > 0) return Number(hub.value);
-		const saved = Number(npc && npc.value);
-		if (Number.isFinite(saved) && saved > 0) return saved;
-		if (npc && npc.opts && npc.opts[0] && npc.opts[0]._value) return Number(npc.opts[0]._value);
-		return Number(SHOP_DEFAULTS[name]) || 0;
-	}
-
-	function resolveShop(name, npc) {
-		refreshServerShops();
-		const live = liveNpc.get(name);
-		if (live && toEntityId(live.gameId) != null) {
-			return { gameId: toEntityId(live.gameId), value: Number(live.value) || shopValue(name, npc) };
-		}
-		const hub = hubNpc.get(name);
-		if (hub && toEntityId(hub.gameId) != null) {
-			return { gameId: toEntityId(hub.gameId), value: Number(hub.value) || shopValue(name, npc) };
-		}
-		return { gameId: toEntityId(npc && npc.gameId) || 0, value: shopValue(name, npc) };
-	}
-
-	function sendShopContract(type, target, value) {
-		const v = Number(value) || 0;
-		const buffer = Buffer.alloc(4);
-		buffer.writeUInt32LE(v >>> 0);
-		mod.send("C_REQUEST_CONTRACT", 50, {
-			type,
-			target: target != null ? target : 0,
-			value: v,
-			name: "",
-			data: buffer
-		});
-	}
-
 	function openRemoteNpc(name) {
 		const npc = mod.settings.npc[name];
 		if (!npc) return;
-		const shop = resolveShop(name, npc);
-		sendShopContract(npc.type, shop.gameId, shop.value);
+		applyPersistedShops();
+		const live = liveNpc.get(name);
+		const value = Number((live && live.value) || npc.value || SHOP_DEFAULTS[name]) || 0;
+		const target = toEntityId(live && live.gameId) || toEntityId(npc.gameId) || 0;
+		const buffer = Buffer.alloc(4);
+		buffer.writeUInt32LE(value >>> 0);
+		mod.send("C_REQUEST_CONTRACT", 50, {
+			type: npc.type,
+			target,
+			value,
+			name: "",
+			data: buffer
+		});
 	}
 
 	Object.keys(mod.settings.npc).forEach(name => {
