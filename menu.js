@@ -75,7 +75,7 @@ module.exports.categories = {
 		{ command: "m jcraft", name: "Tailoring", color: c.y }
 	],
 	Main: [
-		{ command: "tp zone", name: "Teleport", color: c.b, ifcmd: "tp" },
+		{ command: "m $dang", name: "Teleport", color: c.b },
 		{ command: "tp to", name: "Zone", color: c.r, ifcmd: "tp" },
 		{ command: "tp party", name: "Party", color: c.lg, ifcmd: "tp" },
 		{ command: "m tohw", name: "City (Vanguard store)", color: c.o },
@@ -250,7 +250,7 @@ module.exports.pages = {
 			{ command: "ten ui", name: "Auto Nostrum menu", color: c.y, ifcmd: "ten" }
 		],
 		Teleport: [
-			{ command: "tp zone", name: "Teleport", color: c.b, ifcmd: "tp" },
+			{ command: "m $dang", name: "Teleport", color: c.b },
 			{ command: "tp to", name: "Zone", color: c.r, ifcmd: "tp" },
 			{ command: "m $GBam", name: "Guild Bam", color: c.lb, ifcmd: "tp" },
 			{ ifcmd: "tp" },

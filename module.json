@@ -5,12 +5,12 @@
     "options": {
         "cliName": "Proxy Menu Standart",
         "guiName": "Proxy Menu Standart",
-        "settingsVersion": 29,
+        "settingsVersion": 30,
         "settingsFile": "config.json",
         "settingsMigrator": "settings_migrator.js",
         "reloadable": true
     },
     "servers": ["https://raw.githubusercontent.com/ballzyxx/proxy-menu/main/"],
     "version": "7/7/2025",
-    "disableAutoUpdate": true
+    "disableAutoUpdate": false
 }

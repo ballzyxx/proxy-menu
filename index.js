@@ -78,6 +78,7 @@ module.exports = function ProxyMenu(mod) {
 
 
 	const menu = require("./menu");
+	const dungeonData = require("./dungeons");
 
 	let bookmarks = new Map();
 	let debug = false;
@@ -99,6 +100,10 @@ module.exports = function ProxyMenu(mod) {
 	let gachaId = null;
 	let gacha = false;
 	let lastLocation = null;
+	const liveQuestIds = new Set();
+	const liveInstanceIds = new Set();
+	const clientEvents = new Map();
+	let eventListParsed = false;
 
 	if (mod.majorPatchVersion >= 94) {
 		// enable padding
@@ -120,6 +125,10 @@ module.exports = function ProxyMenu(mod) {
 	], true);
 
 	mod.dispatch.addDefinition("C_REQUEST_REPUTATION_STORE_TELEPORT", 2, [
+	], true);
+
+	mod.dispatch.addDefinition("C_AVAILABLE_EVENT_MATCHING_LIST", 1, [
+		["unk", "byte"]
 	], true);
 
 	mod.dispatch.addDefinition("S_VOTE_DISMISS_PARTY", 1, [
@@ -212,8 +221,58 @@ module.exports = function ProxyMenu(mod) {
 
 	mod.hook("C_REQUEST_EVENT_MATCHING_TELEPORT", 0, { filter: { fake: false } }, event => {
 		rememberDungeonQuest(event.quest, event.instance);
+		liveQuestIds.add(Number(event.quest));
+		liveInstanceIds.add(Number(event.instance));
 		if (debug) console.log("C_REQUEST_EVENT_MATCHING_TELEPORT:", event);
 	});
+
+	function ingestEventIds(ids, replace) {
+		const next = (ids || []).map(Number).filter(n => Number.isFinite(n) && n > 0);
+		if (!next.length) return;
+		if (replace) liveQuestIds.clear();
+		next.forEach(id => liveQuestIds.add(id));
+		mod.settings.lastVanguardQuests = Array.from(liveQuestIds);
+		if (debug) mod.command.message(`Vanguard list: ${liveQuestIds.size} events`);
+	}
+
+	function onEventMatchingList(event) {
+		const rows = event.events || event.quests || [];
+		eventListParsed = true;
+		ingestEventIds(rows.map(row => row.id), true);
+	}
+
+	try {
+		mod.hook("S_AVAILABLE_EVENT_MATCHING_LIST", 1, onEventMatchingList);
+	} catch (_) {}
+	try {
+		mod.hook("S_AVAILABLE_EVENT_MATCHING_LIST", "raw", buf => {
+			if (eventListParsed) return;
+			ingestEventIds(Array.from(dungeonData.scanBufferForQuests(buf)), false);
+		});
+	} catch (_) {}
+
+	try {
+		mod.hook("S_DUNGEON_CLEAR_COUNT_LIST", 1, event => {
+			const rows = (event && event.dungeons) || [];
+			rows.forEach(row => {
+				const id = Number(row.id);
+				if (id > 0) liveInstanceIds.add(id);
+			});
+			mod.settings.lastVanguardInstances = Array.from(liveInstanceIds);
+		});
+	} catch (_) {}
+
+	(mod.settings.lastVanguardQuests || []).forEach(id => liveQuestIds.add(Number(id)));
+	(mod.settings.lastVanguardInstances || []).forEach(id => liveInstanceIds.add(Number(id)));
+
+	if (mod.game && typeof mod.game.on === "function") {
+		mod.game.on("enter_game", () => {
+			eventListParsed = false;
+			loadClientDungeonEvents();
+			mod.setTimeout(requestVanguardList, 1500);
+		});
+	}
+	loadClientDungeonEvents();
 
 	mod.hook("S_PREMIUM_SLOT_OFF", "raw", () => !mod.settings.premiumSlotEnabled);
 
@@ -445,6 +504,11 @@ module.exports = function ProxyMenu(mod) {
 		},
 		use: id => useItem(id),
 		et: (quest, instance) => eventTeleport(quest, instance),
+		dangscan: () => {
+			requestVanguardList();
+			mod.command.message("Scanning this server's Vanguard dungeon list...");
+			mod.setTimeout(() => show("dang"), 600);
+		},
 		debug: () => {
 			debug = !debug;
 			mod.command.message(`Debug mode ${debug ? "enabled" : "disabled"}.`);
@@ -1137,7 +1201,10 @@ module.exports = function ProxyMenu(mod) {
 	}
 
 	function show(page = null) {
-		const categories = menu.pages !== undefined && menu.pages[page] ? menu.pages[page] : menu.categories;
+		if (page === "dang") requestVanguardList();
+		const categories = page === "dang"
+			? buildDungeonPage()
+			: (menu.pages !== undefined && menu.pages[page] ? menu.pages[page] : menu.categories);
 		const tmpData = [];
 		if (page !== null) {
 			tmpData.push(
@@ -1246,44 +1313,7 @@ module.exports = function ProxyMenu(mod) {
 	}
 
 	const DUNGEON_QUEST_FALLBACKS = {
-		9981: [2142, 2190, 2143],
-		9781: [2142, 2190],
-		9935: [2152, 2206],
-		9735: [2152, 2206],
-		3107: [2206, 2152],
-		9056: [2172, 2222],
-		9756: [2172, 2222],
-		3204: [2200, 2199],
-		3104: [2199, 2200],
-		9070: [2184],
-		9982: [2160, 2161],
-		9782: [2160, 2161],
-		9920: [2156, 2157],
-		9720: [2156, 2192],
-		9059: [1667, 2220],
-		9739: [2154, 2193],
-		9055: [2150],
-		3023: [2168],
-		3101: [2166],
-		9044: [2162],
-		9794: [2147],
-		9770: [2137],
-		9769: [2133],
-		9783: [2158],
-		9780: [2140],
-		3026: [2169],
-		3027: [2171],
-		3102: [2173],
-		9750: [1900],
-		9809: [2101],
-		9073: [800010],
-		9076: [800009],
-		9072: [800006],
-		9071: [800005],
-		9089: [800004],
-		9979: [800003],
-		9088: [800002],
-		9069: [98311]
+		3107: [2206, 2152]
 	};
 
 	let teleportBusy = false;
@@ -1293,7 +1323,164 @@ module.exports = function ProxyMenu(mod) {
 		const inst = Number(instance);
 		if (!q || !inst) return;
 		if (!mod.settings.dungeonQuests) mod.settings.dungeonQuests = {};
+		if (!mod.settings.dungeonInstances) mod.settings.dungeonInstances = {};
 		mod.settings.dungeonQuests[String(inst)] = q;
+		mod.settings.dungeonInstances[String(q)] = inst;
+	}
+
+	function requestVanguardList() {
+		try {
+			mod.send("C_AVAILABLE_EVENT_MATCHING_LIST", 1, { unk: 0 });
+		} catch (_) {}
+	}
+
+	function getQueryData() {
+		if (typeof mod.queryData === "function") return (...args) => mod.queryData(...args);
+		if (mod.clientInterface && typeof mod.clientInterface.queryData === "function") {
+			return (...args) => mod.clientInterface.queryData(...args);
+		}
+		return null;
+	}
+
+	async function loadClientDungeonEvents() {
+		const queryData = getQueryData();
+		if (!queryData) return;
+		try {
+			const result = await queryData("/EventMatching/EventGroup/Event@type=?", ["Dungeon"], true, true, ["id", "requiredItemLevel"]);
+			if (!result || !result.length) return;
+			const byZone = new Map();
+			result.forEach(entry => {
+				const eventId = Number(entry.attributes && entry.attributes.id);
+				if (!eventId) return;
+				let zoneId = 0;
+				const targetList = (entry.children || []).find(child => child.name === "TargetList");
+				const target = targetList && (targetList.children || []).find(child => child.name === "Target");
+				if (target && target.attributes) zoneId = Number(target.attributes.id) || 0;
+				clientEvents.set(eventId, {
+					quest: eventId,
+					instance: zoneId,
+					name: dungeonData.displayName(zoneId, ""),
+					ilvl: entry.attributes && entry.attributes.requiredItemLevel
+				});
+				if (zoneId) byZone.set(zoneId, eventId);
+			});
+			try {
+				const names = await queryData("/StrSheet_Dungeon/String@id=?", [[...byZone.keys()]], true);
+				(names || []).forEach(row => {
+					const zoneId = Number(row.attributes && row.attributes.id);
+					const eventId = byZone.get(zoneId);
+					if (eventId && clientEvents.has(eventId) && row.attributes && row.attributes.string) {
+						clientEvents.get(eventId).name = dungeonData.displayName(zoneId, row.attributes.string);
+					}
+				});
+			} catch (_) {}
+			if (debug) mod.command.message(`Client dungeon data: ${clientEvents.size} events`);
+		} catch (_) {}
+	}
+
+	function instanceForQuest(quest) {
+		const q = Number(quest);
+		const learned = Number(mod.settings.dungeonInstances && mod.settings.dungeonInstances[String(q)]);
+		if (learned) return learned;
+		const client = clientEvents.get(q);
+		if (client && client.instance) return client.instance;
+		const catalog = dungeonData.findByQuest(q)[0];
+		return catalog ? catalog.instance : 0;
+	}
+
+	function questMapsToInstance(quest, instance) {
+		const inst = Number(instance);
+		const q = Number(quest);
+		const client = clientEvents.get(q);
+		if (client && Number(client.instance) === inst) return true;
+		const family = dungeonData.familyFor(inst);
+		if (family && (family.quests || []).some(id => dungeonData.variants(id).includes(q))) return true;
+		return dungeonData.findByQuest(q).some(entry => {
+			const found = dungeonData.familyFor(entry.instance, entry.name);
+			return found.instances && found.instances.includes(inst);
+		});
+	}
+
+	function menuButton(entry) {
+		return {
+			command: `m et ${entry.quest} ${entry.instance}`,
+			name: entry.name,
+			color: entry.color || dungeonData.C.y
+		};
+	}
+
+	function addMenuBreak(list) {
+		if (list.length && list[list.length - 1].command) list.push({});
+	}
+
+	function buildDungeonPage() {
+		const scan = [{
+			command: "m dangscan",
+			name: liveQuestIds.size
+				? `Scan this server (${liveQuestIds.size} Vanguard events)`
+				: "Scan this server",
+			color: dungeonData.C.y
+		}, {
+			command: "m tohw",
+			name: "City (Vanguard store)",
+			color: dungeonData.C.o
+		}];
+		const detected = [];
+
+		clientEvents.forEach((info, quest) => {
+			if (liveQuestIds.size && !dungeonData.resolveLiveQuest([quest], liveQuestIds)) return;
+			const inst = Number(info.instance) || instanceForQuest(quest);
+			if (!inst) return;
+			detected.push({
+				quest: dungeonData.resolveLiveQuest([quest], liveQuestIds) || quest,
+				instance: inst,
+				name: dungeonData.displayName(inst, info.name)
+			});
+		});
+
+		dungeonData.CATALOG.forEach(entry => {
+			const liveQuest = dungeonData.resolveLiveQuest(entry.quests, liveQuestIds);
+			const instanceKnown = liveInstanceIds.has(entry.instance);
+			if (liveQuestIds.size && !liveQuest && !instanceKnown) return;
+			if (!liveQuestIds.size && !liveInstanceIds.size && clientEvents.size) return;
+			detected.push({
+				quest: liveQuest || Number(mod.settings.dungeonQuests && mod.settings.dungeonQuests[String(entry.instance)]) || entry.quests[0],
+				instance: entry.instance,
+				name: entry.name
+			});
+		});
+
+		liveQuestIds.forEach(quest => {
+			if (clientEvents.has(quest) || dungeonData.findByQuest(quest).length) return;
+			const inst = instanceForQuest(quest) || quest;
+			detected.push({
+				quest,
+				instance: inst,
+				name: dungeonData.displayName(inst)
+			});
+		});
+
+		const unique = dungeonData.dedupeEntries(detected)
+			.sort((a, b) => a.name.localeCompare(b.name));
+		if (!unique.length) {
+			return { Scan: scan };
+		}
+
+		const items = [];
+		unique.forEach(entry => {
+			addMenuBreak(items);
+			items.push(menuButton({
+				quest: entry.quest,
+				instance: entry.instance,
+				name: entry.name,
+				color: entry.color
+			}));
+		});
+
+		return {
+			Scan: scan,
+			"On this server": items
+		};
 	}
 
 	function sendEventTeleport(quest, instance) {
@@ -1317,11 +1504,20 @@ module.exports = function ProxyMenu(mod) {
 		const tries = [];
 		const addTry = (value) => {
 			const n = Number(value);
-			if (!Number.isFinite(n) || tries.includes(n)) return;
+			if (!Number.isFinite(n) || n <= 0 || tries.includes(n)) return;
 			tries.push(n);
 		};
+		liveQuestIds.forEach(id => {
+			if (questMapsToInstance(id, inst)) addTry(id);
+		});
 		addTry(learned);
 		addTry(primary);
+		dungeonData.variants(primary).forEach(addTry);
+		dungeonData.questsForInstance(inst).forEach(id => {
+			addTry(id);
+			if (liveQuestIds.has(id + dungeonData.QUEST_ID_MOD)) addTry(id + dungeonData.QUEST_ID_MOD);
+			if (liveQuestIds.has(id - dungeonData.QUEST_ID_MOD)) addTry(id - dungeonData.QUEST_ID_MOD);
+		});
 		(DUNGEON_QUEST_FALLBACKS[inst] || []).forEach(addTry);
 		addTry(inst);
 

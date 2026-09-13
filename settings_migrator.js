@@ -23,6 +23,9 @@ const DefaultSettings = {
 	aeromanual: false,
 	aero: "normal",
 	dungeonQuests: {},
+	dungeonInstances: {},
+	lastVanguardQuests: [],
+	lastVanguardInstances: [],
 	npc: {
 		// For bank NPC.
 		// The "type" is a "type" from S_REQUEST_CONTRACT packet.
