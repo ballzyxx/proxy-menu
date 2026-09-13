@@ -54,7 +54,31 @@ module.exports = function ProxyMenu(mod) {
 	};
 	const liveNpc = new Map();
 	const hubNpc = new Map();
+	let lastServerKey = null;
 	const HUB_ZONES = new Set([13, 58, 63, 72, 84, 183, 381, 599, 2800, 3051]);
+	const SHOP_DEFAULTS = {
+		store: 70310,
+		sstore: 250,
+		ssstore: 111,
+		vstore: 600,
+		fstore: 16094,
+		ffstore: 16095,
+		fishstore: 1000,
+		boxfstore: 1001,
+		acraft: 193,
+		scraft: 190,
+		pcraft: 191,
+		ecraft: 192,
+		jcraft: 195,
+		bel: 141,
+		vng: 609,
+		vgc: 6090,
+		guard: 6112,
+		bank: 1,
+		gbank: 3,
+		pbank: 9,
+		cbank: 12
+	};
 	const SHOP_BY_VALUE = {
 		70310: "store",
 		16063: "store",
@@ -383,12 +407,112 @@ module.exports = function ProxyMenu(mod) {
 		return n;
 	}
 
+	function serverListMap() {
+		try {
+			return mod.serverList
+				|| (mod.connection && mod.connection.metadata && mod.connection.metadata.serverList)
+				|| {};
+		} catch (_) {
+			return {};
+		}
+	}
+
+	function listEntry(list, id) {
+		if (id == null || id === "" || !list) return null;
+		if (list[id]) return list[id];
+		const asStr = String(id);
+		if (list[asStr]) return list[asStr];
+		const asNum = Number(id);
+		if (Number.isFinite(asNum) && list[asNum]) return list[asNum];
+		return null;
+	}
+
+	function classifyServer(id, name) {
+		const n = String(name || "");
+		if (Number(id) === 500 || /asura/i.test(n)) return "asura";
+		if (/agaia|agais/i.test(n)) return "agaia";
+		if (id != null && id !== "") return "private";
+		return "unknown";
+	}
+
+	function currentServer() {
+		let id = null;
+		let name = "";
+		try {
+			if (mod.serverId != null && mod.serverId !== "") id = mod.serverId;
+		} catch (_) {}
+		try {
+			if ((id == null || id === "") && mod.game && mod.game.me && mod.game.me.serverId != null)
+				id = mod.game.me.serverId;
+		} catch (_) {}
+		try {
+			const entry = listEntry(serverListMap(), id);
+			if (entry) name = String(entry.name || entry.serverName || "");
+		} catch (_) {}
+		const kind = classifyServer(id, name);
+		const idNum = (id == null || id === "") ? null : Number(id);
+		return {
+			id: (idNum != null && Number.isFinite(idNum)) ? idNum : id,
+			name,
+			kind
+		};
+	}
+
+	function serverKey() {
+		const s = currentServer();
+		if (s.kind === "asura" || s.kind === "agaia") return s.kind;
+		if (s.id != null && s.id !== "") return `id:${s.id}`;
+		return "unknown";
+	}
+
+	function shopBag() {
+		if (!mod.settings.shopByServer || typeof mod.settings.shopByServer !== "object")
+			mod.settings.shopByServer = {};
+		const key = serverKey();
+		if (!mod.settings.shopByServer[key]) mod.settings.shopByServer[key] = {};
+		return mod.settings.shopByServer[key];
+	}
+
+	function seedAsuraFromFlat() {
+		if (serverKey() !== "asura") return;
+		const bag = shopBag();
+		if (Object.keys(bag).length) return;
+		Object.entries(mod.settings.npc || {}).forEach(([name, npc]) => {
+			const id = toEntityId(npc && npc.gameId);
+			const v = Number(npc && npc.value);
+			if (id != null && Number.isFinite(v) && v > 0) bag[name] = { gameId: String(id), value: v };
+		});
+	}
+
+	function refreshServerShops() {
+		const key = serverKey();
+		if (key === lastServerKey) return;
+		lastServerKey = key;
+		hubNpc.clear();
+		if (key === "unknown") return;
+		seedAsuraFromFlat();
+		Object.entries(shopBag()).forEach(([name, e]) => {
+			const id = toEntityId(e && e.gameId);
+			const v = Number(e && e.value);
+			if (id != null && Number.isFinite(v) && v > 0) hubNpc.set(name, { gameId: id, value: v });
+		});
+	}
+
 	function shopNameForValue(value) {
 		const v = Number(value);
 		if (!Number.isFinite(v) || v <= 0) return null;
 		if (SHOP_BY_VALUE[v]) return SHOP_BY_VALUE[v];
 		if (v >= 16000 && v <= 17000) return "store";
 		return null;
+	}
+
+	function uniqueTemplateShop(templateId) {
+		const names = [];
+		Object.entries(mod.settings.npc || {}).forEach(([name, npc]) => {
+			if ((npc.opts || []).some(opt => opt.templateId === templateId) && !names.includes(name))
+				names.push(name);
+		});
+		return names.length === 1 ? names[0] : null;
 	}
 
 	function rememberShop(name, target, value, zone) {
@@ -398,25 +522,37 @@ module.exports = function ProxyMenu(mod) {
 		if (id == null || !Number.isFinite(v) || v <= 0) return;
 		const entry = { gameId: id, value: v };
 		liveNpc.set(name, entry);
+		refreshServerShops();
 		const hub = zone == null || HUB_ZONES.has(Number(zone));
-		if (hub || !hubNpc.has(name)) {
-			hubNpc.set(name, entry);
-			mod.settings.npc[name].gameId = id;
-			mod.settings.npc[name].value = v;
+		if (!hub && hubNpc.has(name)) return;
+		hubNpc.set(name, entry);
+		if (serverKey() !== "unknown") {
+			shopBag()[name] = { gameId: String(id), value: v };
+			try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
 		}
 	}
 
-	Object.entries(mod.settings.npc || {}).forEach(([name, npc]) => {
-		const id = toEntityId(npc && npc.gameId);
-		const v = Number(npc && npc.value);
-		if (id != null && Number.isFinite(v) && v > 0) hubNpc.set(name, { gameId: id, value: v });
-	});
+	refreshServerShops();
+	try {
+		mod.game.on("enter_game", () => {
+			lastServerKey = null;
+			refreshServerShops();
+		});
+	} catch (_) {}
 
 	mod.hook("S_SPAWN_NPC", mod.majorPatchVersion >= 101 ? 12 : 11, event => {
+		refreshServerShops();
 		Object.entries(mod.settings.npc).forEach(([name, npc]) => {
 			if (npc.opts === undefined) return;
 			const opt = npc.opts.find(option => option.templateId === event.templateId && option.huntingZoneId === event.huntingZoneId);
-			if (opt) rememberShop(name, event.gameId, opt._value, event.huntingZoneId);
+			if (opt) {
+				rememberShop(name, event.gameId, opt._value, event.huntingZoneId);
+				return;
+			}
+			if (uniqueTemplateShop(event.templateId) === name) {
+				const byTemplate = npc.opts.find(option => option.templateId === event.templateId);
+				if (byTemplate) rememberShop(name, event.gameId, byTemplate._value, event.huntingZoneId);
+			}
 		});
 	});
 
@@ -637,38 +773,18 @@ module.exports = function ProxyMenu(mod) {
 		}
 	};
 
-	const SHOP_DEFAULTS = {
-		store: 70310,
-		sstore: 250,
-		ssstore: 111,
-		vstore: 600,
-		fstore: 16094,
-		ffstore: 16095,
-		fishstore: 1000,
-		boxfstore: 1001,
-		acraft: 193,
-		scraft: 190,
-		pcraft: 191,
-		ecraft: 192,
-		jcraft: 195,
-		bel: 141,
-		vng: 609,
-		vgc: 6090,
-		guard: 6112,
-		bank: 1,
-		gbank: 3,
-		pbank: 9,
-		cbank: 12
-	};
-
 	function shopValue(name, npc) {
-		const saved = Number(npc && npc.value);
+		refreshServerShops();
+		const hub = hubNpc.get(name);
+		if (hub && Number(hub.value) > 0) return Number(hub.value);
+		const saved = Number(SHOP_DEFAULTS[name]);
 		if (Number.isFinite(saved) && saved > 0) return saved;
 		if (npc && npc.opts && npc.opts[0] && npc.opts[0]._value) return Number(npc.opts[0]._value);
-		return Number(SHOP_DEFAULTS[name]) || 0;
+		return Number(npc && npc.value) || 0;
 	}
 
 	function resolveShop(name, npc) {
+		refreshServerShops();
 		const live = liveNpc.get(name);
 		if (live && toEntityId(live.gameId) != null) {
 			return { gameId: toEntityId(live.gameId), value: Number(live.value) || shopValue(name, npc) };
@@ -677,7 +793,7 @@ module.exports = function ProxyMenu(mod) {
 		if (hub && toEntityId(hub.gameId) != null) {
 			return { gameId: toEntityId(hub.gameId), value: Number(hub.value) || shopValue(name, npc) };
 		}
-		return { gameId: toEntityId(npc && npc.gameId), value: shopValue(name, npc) };
+		return { gameId: 0, value: shopValue(name, npc) };
 	}
 
 	function sendShopContract(type, target, value) {

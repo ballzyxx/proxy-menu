@@ -26,6 +26,7 @@ const DefaultSettings = {
 	dungeonInstances: {},
 	lastVanguardQuests: [],
 	lastVanguardInstances: [],
+	shopByServer: {},
 	npc: {
 		// For bank NPC.
 		// The "type" is a "type" from S_REQUEST_CONTRACT packet.
