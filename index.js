@@ -407,90 +407,32 @@ module.exports = function ProxyMenu(mod) {
 		return n;
 	}
 
-	function serverListMap() {
+	function currentServerId() {
 		try {
-			return mod.serverList
-				|| (mod.connection && mod.connection.metadata && mod.connection.metadata.serverList)
-				|| {};
-		} catch (_) {
-			return {};
-		}
-	}
-
-	function listEntry(list, id) {
-		if (id == null || id === "" || !list) return null;
-		if (list[id]) return list[id];
-		const asStr = String(id);
-		if (list[asStr]) return list[asStr];
-		const asNum = Number(id);
-		if (Number.isFinite(asNum) && list[asNum]) return list[asNum];
+			if (mod.serverId != null && mod.serverId !== "") return String(mod.serverId);
+		} catch (_) {}
+		try {
+			if (mod.game && mod.game.me && mod.game.me.serverId != null && mod.game.me.serverId !== "")
+				return String(mod.game.me.serverId);
+		} catch (_) {}
 		return null;
-	}
-
-	function classifyServer(id, name) {
-		const n = String(name || "");
-		if (Number(id) === 500 || /asura/i.test(n)) return "asura";
-		if (/agaia|agais/i.test(n)) return "agaia";
-		if (id != null && id !== "") return "private";
-		return "unknown";
-	}
-
-	function currentServer() {
-		let id = null;
-		let name = "";
-		try {
-			if (mod.serverId != null && mod.serverId !== "") id = mod.serverId;
-		} catch (_) {}
-		try {
-			if ((id == null || id === "") && mod.game && mod.game.me && mod.game.me.serverId != null)
-				id = mod.game.me.serverId;
-		} catch (_) {}
-		try {
-			const entry = listEntry(serverListMap(), id);
-			if (entry) name = String(entry.name || entry.serverName || "");
-		} catch (_) {}
-		const kind = classifyServer(id, name);
-		const idNum = (id == null || id === "") ? null : Number(id);
-		return {
-			id: (idNum != null && Number.isFinite(idNum)) ? idNum : id,
-			name,
-			kind
-		};
-	}
-
-	function serverKey() {
-		const s = currentServer();
-		if (s.kind === "asura" || s.kind === "agaia") return s.kind;
-		if (s.id != null && s.id !== "") return `id:${s.id}`;
-		return "unknown";
 	}
 
 	function shopBag() {
 		if (!mod.settings.shopByServer || typeof mod.settings.shopByServer !== "object")
 			mod.settings.shopByServer = {};
-		const key = serverKey();
+		const key = currentServerId();
+		if (!key) return {};
 		if (!mod.settings.shopByServer[key]) mod.settings.shopByServer[key] = {};
 		return mod.settings.shopByServer[key];
 	}
 
-	function seedAsuraFromFlat() {
-		if (serverKey() !== "asura") return;
-		const bag = shopBag();
-		if (Object.keys(bag).length) return;
-		Object.entries(mod.settings.npc || {}).forEach(([name, npc]) => {
-			const id = toEntityId(npc && npc.gameId);
-			const v = Number(npc && npc.value);
-			if (id != null && Number.isFinite(v) && v > 0) bag[name] = { gameId: String(id), value: v };
-		});
-	}
-
 	function refreshServerShops() {
-		const key = serverKey();
+		const key = currentServerId();
 		if (key === lastServerKey) return;
 		lastServerKey = key;
 		hubNpc.clear();
-		if (key === "unknown") return;
-		seedAsuraFromFlat();
+		if (!key) return;
 		Object.entries(shopBag()).forEach(([name, e]) => {
 			const id = toEntityId(e && e.gameId);
 			const v = Number(e && e.value);
@@ -526,7 +468,7 @@ module.exports = function ProxyMenu(mod) {
 		const hub = zone == null || HUB_ZONES.has(Number(zone));
 		if (!hub && hubNpc.has(name)) return;
 		hubNpc.set(name, entry);
-		if (serverKey() !== "unknown") {
+		if (currentServerId()) {
 			shopBag()[name] = { gameId: String(id), value: v };
 			try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
 		}
