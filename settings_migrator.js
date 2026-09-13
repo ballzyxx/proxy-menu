@@ -22,6 +22,7 @@ const DefaultSettings = {
 	boxdelay: 110,
 	aeromanual: false,
 	aero: "normal",
+	dungeonQuests: {},
 	npc: {
 		// For bank NPC.
 		// The "type" is a "type" from S_REQUEST_CONTRACT packet.

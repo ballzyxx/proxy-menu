@@ -210,7 +210,8 @@ module.exports = function ProxyMenu(mod) {
 		}
 	});
 
-	mod.hook("C_REQUEST_EVENT_MATCHING_TELEPORT", 0, event => {
+	mod.hook("C_REQUEST_EVENT_MATCHING_TELEPORT", 0, { filter: { fake: false } }, event => {
+		rememberDungeonQuest(event.quest, event.instance);
 		if (debug) console.log("C_REQUEST_EVENT_MATCHING_TELEPORT:", event);
 	});
 
@@ -1244,11 +1245,124 @@ module.exports = function ProxyMenu(mod) {
 		});
 	}
 
-	function eventTeleport(quest, instance) {
+	const DUNGEON_QUEST_FALLBACKS = {
+		9981: [2142, 2190, 2143],
+		9781: [2142, 2190],
+		9935: [2152, 2206],
+		9735: [2152, 2206],
+		3107: [2206, 2152],
+		9056: [2172, 2222],
+		9756: [2172, 2222],
+		3204: [2200, 2199],
+		3104: [2199, 2200],
+		9070: [2184],
+		9982: [2160, 2161],
+		9782: [2160, 2161],
+		9920: [2156, 2157],
+		9720: [2156, 2192],
+		9059: [1667, 2220],
+		9739: [2154, 2193],
+		9055: [2150],
+		3023: [2168],
+		3101: [2166],
+		9044: [2162],
+		9794: [2147],
+		9770: [2137],
+		9769: [2133],
+		9783: [2158],
+		9780: [2140],
+		3026: [2169],
+		3027: [2171],
+		3102: [2173],
+		9750: [1900],
+		9809: [2101],
+		9073: [800010],
+		9076: [800009],
+		9072: [800006],
+		9071: [800005],
+		9089: [800004],
+		9979: [800003],
+		9088: [800002],
+		9069: [98311]
+	};
+
+	let teleportBusy = false;
+
+	function rememberDungeonQuest(quest, instance) {
+		const q = Number(quest);
+		const inst = Number(instance);
+		if (!q || !inst) return;
+		if (!mod.settings.dungeonQuests) mod.settings.dungeonQuests = {};
+		mod.settings.dungeonQuests[String(inst)] = q;
+	}
+
+	function sendEventTeleport(quest, instance) {
 		mod.send("C_REQUEST_EVENT_MATCHING_TELEPORT", 0, {
-			quest: parseInt(quest),
-			instance: parseInt(instance)
+			unk1: 0,
+			quest: Number(quest) || 0,
+			instance: Number(instance) || 0,
+			unk2: 0,
+			unk3: 0
 		});
+	}
+
+	function eventTeleport(quest, instance) {
+		const inst = Number(instance);
+		const primary = Number(quest);
+		if (!inst) return;
+		if (teleportBusy) return;
+
+		if (!mod.settings.dungeonQuests) mod.settings.dungeonQuests = {};
+		const learned = Number(mod.settings.dungeonQuests[String(inst)]);
+		const tries = [];
+		const addTry = (value) => {
+			const n = Number(value);
+			if (!Number.isFinite(n) || tries.includes(n)) return;
+			tries.push(n);
+		};
+		addTry(learned);
+		addTry(primary);
+		(DUNGEON_QUEST_FALLBACKS[inst] || []).forEach(addTry);
+		addTry(inst);
+
+		teleportBusy = true;
+		let step = 0;
+		let done = false;
+		let timer = null;
+
+		const finish = (ok) => {
+			if (done) return;
+			done = true;
+			teleportBusy = false;
+			if (timer) {
+				mod.clearTimeout(timer);
+				timer = null;
+			}
+			try { mod.unhook(zoneHook); } catch (_) {}
+			if (ok) {
+				const used = tries[Math.max(0, step - 1)];
+				rememberDungeonQuest(used, inst);
+			} else {
+				mod.command.message("Dungeon teleport failed. Open Vanguard and click Go once so the menu can learn this dungeon.");
+			}
+		};
+
+		const zoneHook = mod.hook("S_LOAD_TOPO", "raw", () => {
+			finish(true);
+		});
+
+		const tryOne = () => {
+			if (done) return;
+			if (step >= tries.length) {
+				finish(false);
+				return;
+			}
+			sendEventTeleport(tries[step], inst);
+			step += 1;
+			timer = mod.setTimeout(tryOne, 450);
+		};
+
+		tryOne();
 	}
 
 	function bindHotkeys(categories) {
