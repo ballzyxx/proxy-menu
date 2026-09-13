@@ -58,7 +58,6 @@ module.exports = function ProxyMenu(mod) {
 	let pendingShop = null;
 	let pendingShopTimer = null;
 	const REMOTE_HUB_ZONES = new Set([183, 2800]);
-	const CITY_STORE_TEMPLATES = new Set([1001, 1002, 1003, 1004, 1020, 1101, 1103, 2001, 2018, 2019]);
 	const DIALOG_SHOP_BUTTON = { 9: "store" };
 	const CLASSIC_STORE_OPTS = [
 		{ templateId: 1001, huntingZoneId: 59, _value: 16059 },
@@ -74,7 +73,8 @@ module.exports = function ProxyMenu(mod) {
 		{ templateId: 1004, huntingZoneId: 61, _value: 16061 },
 		{ templateId: 1004, huntingZoneId: 65, _value: 16065 },
 		{ templateId: 1035, huntingZoneId: 203, _value: 16087 },
-		{ templateId: 1103, huntingZoneId: 63, _value: 16063 }
+		{ templateId: 1103, huntingZoneId: 63, _value: 16063 },
+		{ templateId: 1124, huntingZoneId: 63, _value: 16063 }
 	];
 	const SHOP_DEFAULTS = {
 		store: 70310,
@@ -519,16 +519,33 @@ module.exports = function ProxyMenu(mod) {
 			if (!opts.some(o => o.templateId === extra.templateId && o.huntingZoneId === extra.huntingZoneId))
 				opts.push(extra);
 		});
-		return opts;
+		return opts.filter(o => !(o.templateId === 1101 && o.huntingZoneId === 63));
 	}
 
-	function inferStoreOpt(templateId, huntingZoneId) {
-		const z = Number(huntingZoneId);
-		const t = Number(templateId);
-		if (!CITY_STORE_TEMPLATES.has(t) || !Number.isFinite(z)) return null;
-		if (z === 183 || z === 2800) return { _value: 70310 };
-		if (z >= 300) return null;
-		return { _value: storeCatalogForZone(z) };
+	function currentZoneId() {
+		try {
+			if (mod.game && mod.game.me && mod.game.me.zone != null) return Number(mod.game.me.zone);
+		} catch (_) {}
+		return 0;
+	}
+
+	function lastDialogInThisZone() {
+		if (!lastDialog) return false;
+		const z = currentZoneId();
+		const d = Number(lastDialog.zone);
+		if (!z || !d) return true;
+		return z === d;
+	}
+
+	function shopButtonFromDialog() {
+		if (!lastDialog) return null;
+		if (lastDialog.shops && lastDialog.shops.store) return lastDialog.shops.store;
+		const entries = lastDialog.entries || [];
+		for (let i = 0; i < entries.length; i++) {
+			if (shopNameForValue(entries[i].type) === "store" || DIALOG_SHOP_BUTTON[entries[i].type] === "store")
+				return { index: entries[i].index, value: entries[i].type };
+		}
+		return null;
 	}
 
 	function dialogEntries(event) {
@@ -558,11 +575,13 @@ module.exports = function ProxyMenu(mod) {
 	}
 
 	function clickDialogShop(name) {
-		if (!lastDialog || !lastDialog.shops || !lastDialog.shops[name] || lastDialog.id == null) return false;
+		if (!lastDialog || lastDialog.id == null) return false;
+		const shop = (lastDialog.shops && lastDialog.shops[name]) || (name === "store" ? shopButtonFromDialog() : null);
+		if (!shop) return false;
 		try {
 			mod.send("C_DIALOG", 1, {
 				id: lastDialog.id,
-				index: lastDialog.shops[name].index,
+				index: shop.index,
 				questReward: -1,
 				unk: -1
 			});
@@ -610,7 +629,6 @@ module.exports = function ProxyMenu(mod) {
 			if (!opt && REMOTE_HUB_ZONES.has(Number(event.huntingZoneId))) {
 				opt = opts.find(option => option.templateId === event.templateId);
 			}
-			if (!opt && name === "store") opt = inferStoreOpt(event.templateId, event.huntingZoneId);
 			if (opt) persistHubShop(name, event.gameId, opt._value, event.huntingZoneId);
 		});
 	});
@@ -652,6 +670,7 @@ module.exports = function ProxyMenu(mod) {
 			gameId: event.gameId,
 			zone: event.huntingZoneId,
 			shops,
+			entries,
 			open: true
 		};
 		if (pendingShop && shops[pendingShop]) {
@@ -860,7 +879,7 @@ module.exports = function ProxyMenu(mod) {
 		const npc = mod.settings.npc[name];
 		if (!npc) return;
 		applyPersistedShops();
-		if (npc.type === 9 && lastDialog && lastDialog.shops && lastDialog.shops[name]) {
+		if (npc.type === 9 && lastDialogInThisZone() && lastDialog && (lastDialog.shops[name] || (name === "store" && shopButtonFromDialog()))) {
 			if (lastDialog.open && clickDialogShop(name)) return;
 			const talked = toEntityId(lastDialog.gameId);
 			if (talked) {
