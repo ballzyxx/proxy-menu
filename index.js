@@ -43,9 +43,9 @@ module.exports = function ProxyMenu(mod) {
 	const path = jsonRequire("path");
 	const fs = jsonRequire("fs");
 	const NecklaceIDs = [20715, 20716, 20717, 20752];
-	const Message2 = "You are wearing the Resource Gathering Amulet! На вас надет Амулет на сбор ресурсов!";
+	const Message2 = "You are wearing the Resource Gathering Amulet!";
 	const WhiskerIDs = [206100, 206101, 206102, 206103, 206104, 206105, 206106, 206107, 206108, 206109];
-	const Message = "You're wearing a fisherman's moustache! На вас надеты усы рыбака!";
+	const Message = "You are wearing a fisherman's moustache!";
 	const weather = {
 		normal: "acn_aeroset.AERO.SPR_Corruption_AERO",
 		snow: "BF_snowBattle_aeroset.AERO.BF_snowBattle_renew_AERO",
@@ -77,19 +77,7 @@ module.exports = function ProxyMenu(mod) {
 	};
 
 
-	let language = "en";
-
-	try {
-		language = require("../../bin/config").loadConfig()?.uilanguage;
-	} catch (_) { }
-
-	let menu = {};
-
-	try {
-		menu = require(`./menu_${language}`);
-	} catch (_) {
-		menu = require("./menu");
-	}
+	const menu = require("./menu");
 
 	let bookmarks = new Map();
 	let debug = false;
@@ -370,7 +358,7 @@ module.exports = function ProxyMenu(mod) {
 		},
 		premium: () => {
 			mod.settings.premiumSlotEnabled = !mod.settings.premiumSlotEnabled;
-			mod.command.message(`Доп. иконки меню на премиум панели: ${mod.settings.premiumSlotEnabled ? "Включено" : "Выключено"}`);
+			mod.command.message(`Extra premium-bar menu icons: ${mod.settings.premiumSlotEnabled ? "enabled" : "disabled"}`);
 		},
 		lobby: () => {
 			mod.send("C_RETURN_TO_LOBBY", 1);
@@ -397,43 +385,43 @@ module.exports = function ProxyMenu(mod) {
 		},
 		build: () => {
 			mod.settings.spawnBuild = !mod.settings.spawnBuild;
-			mod.command.message(`Таблички. Ёлки. Календарь: ${mod.settings.spawnBuild ? "скрыты" : "будут видны"}`);
+			mod.command.message(`Signs, trees, calendar: ${mod.settings.spawnBuild ? "hidden" : "visible"}`);
 		},
 		scene: () => {
 			mod.settings.blockscene = !mod.settings.blockscene;
-			mod.command.message(`Пропуск видеозаставок: ${mod.settings.blockscene ? "Включен" : "Выключен"}`);
+			mod.command.message(`Skip cutscenes: ${mod.settings.blockscene ? "enabled" : "disabled"}`);
 		},
 		fix: () => {
 			mod.settings.fix = !mod.settings.fix;
-			mod.command.message(`JustSpam F: ${mod.settings.fix ? "Включено" : "Выключено"}`);
+			mod.command.message(`JustSpam F: ${mod.settings.fix ? "enabled" : "disabled"}`);
 		},
 		tolobby: () => {
 			mod.settings.lobby = !mod.settings.lobby;
-			mod.command.message(`Быстрый релог на персонажей: ${mod.settings.lobby ? "Включено" : "Выключено"}`);
+			mod.command.message(`Fast character select: ${mod.settings.lobby ? "enabled" : "disabled"}`);
 		},
 		drunk: () => {
 			mod.settings.drunk = !mod.settings.drunk;
-			mod.command.message(`Скрытие пьяного экрана: ${mod.settings.drunk ? "Скрываю" : "Не скрываю"}`);
+			mod.command.message(`Hide drunk screen: ${mod.settings.drunk ? "on" : "off"}`);
 		},
 		brooch: () => {
 			mod.settings.brooch = !mod.settings.brooch;
-			mod.command.message(`Скрытие анимации брошки: ${mod.settings.brooch ? "Скрываю" : "Не скрываю"}`);
+			mod.command.message(`Hide brooch animation: ${mod.settings.brooch ? "on" : "off"}`);
 		},
 		dbe: () => {
 			mod.settings.backstep = !mod.settings.backstep;
-			mod.command.message(`Автосброс эвейда (прист): ${mod.settings.backstep ? "Включено" : "Выключено"}`);
+			mod.command.message(`Auto reset evade (Priest): ${mod.settings.backstep ? "enabled" : "disabled"}`);
 		},
 		ggreset: () => {
 			mod.settings.ggreset = !mod.settings.ggreset;
-			mod.command.message(`Автосброс Поляны после использования свитка телепортации: ${mod.settings.ggreset ? "Включено" : "Выключено"}`);
+			mod.command.message(`Auto reset Velik's Sanctuary after teleport scroll: ${mod.settings.ggreset ? "enabled" : "disabled"}`);
 		},
 		autoaccept: () => {
 			mod.settings.autoaccept = !mod.settings.autoaccept;
-			mod.command.message(`Авто принятие пати : ${mod.settings.autoaccept ? "Включено" : "Выключено"}`);
+			mod.command.message(`Auto accept party: ${mod.settings.autoaccept ? "enabled" : "disabled"}`);
 		},
 		autoreset: () => {
 			mod.settings.autoreset = !mod.settings.autoreset;
-			mod.command.message(`Авто приняти сброса / роспуска пати: ${mod.settings.autoreset ? "Включено" : "Выключено"}`);
+			mod.command.message(`Auto accept dungeon reset / party disband: ${mod.settings.autoreset ? "enabled" : "disabled"}`);
 		},
 		hotkey: arg => {
 			if (!arg) {
@@ -469,7 +457,7 @@ module.exports = function ProxyMenu(mod) {
 			if (!isNaN(meow)) changeChannel(meow);
 			else if (["n"].includes(meow)) changeChannel(currentChannel.channel + 1);
 			else if (["b"].includes(meow)) changeChannel(currentChannel.channel - 1);
-			else console.log("Неверное значение");
+			else console.log("Invalid value");
 		},
 		broker: () => {
 			mod.send("S_NPC_MENU_SELECT", 1, { type: 28 });
@@ -478,33 +466,33 @@ module.exports = function ProxyMenu(mod) {
 			if (!percent || isDrop) return;
 			percent = (parseInt(curHp) * 100 / parseInt(maxHp)) - Number(percent);
 			if (percent <= 0) {
-				return mod.command.message("Мало HP");
+				return mod.command.message("Not enough HP");
 			}
 			dropHp(percent);
 		},
 		backwalk: () => {
 			mod.settings.backwalk = !mod.settings.backwalk;
-			mod.command.message(`Ходьба спиной (видят только другие) : ${mod.settings.backwalk ? "Включено" : "Выключено"}`);
+			mod.command.message(`Walk backward (others see it): ${mod.settings.backwalk ? "enabled" : "disabled"}`);
 		},
 		circlewalk: () => {
 			mod.settings.circlewalk = !mod.settings.circlewalk;
-			mod.command.message(`Ходьба вращаясь (видят только другие) : ${mod.settings.circlewalk ? "Включено" : "Выключено"}`);
+			mod.command.message(`Spin walk (others see it): ${mod.settings.circlewalk ? "enabled" : "disabled"}`);
 		},
 		circle: arg => {
 			mod.settings.circle = arg;
-			mod.command.message(`Коефициент поворота <font color="#5da8ce">${arg}</font>`);
+			mod.command.message(`Turn rate <font color="#5da8ce">${arg}</font>`);
 		},
 		autobox: () => {
 			mod.settings.openbox = !mod.settings.openbox;
-			mod.command.message(`Открытие коробок в один клик: ${mod.settings.openbox ? "Включено" : "Выключено"}`);
+			mod.command.message(`One-click box open: ${mod.settings.openbox ? "enabled" : "disabled"}`);
 		},
 		boxdelay: (arg) => {
 			if (arg === "0") {
 				mod.settings.boxdelay = 0;
-				mod.command.message("Задержка открытия коробок убрана");
+				mod.command.message("Box open delay removed");
 			} else if (!isNaN(arg)) {
 				mod.settings.boxdelay = parseInt(arg);
-				mod.command.message(`Задержка открытия: ${ mod.settings.boxdelay / 1000 } сек`);
+				mod.command.message(`Open delay: ${ mod.settings.boxdelay / 1000 } sec`);
 			}
 		},
 		aero: (arg) => {
@@ -513,22 +501,22 @@ module.exports = function ProxyMenu(mod) {
 					if (mod.settings.aero === arg) {
 						mod.settings.aeromanual = false;
 						mod.settings.aero = "normal";
-						mod.command.message("Погода отключена.");
+						mod.command.message("Weather disabled.");
 					} else {
 						mod.settings.aero = arg;
-						mod.command.message(`Погода сменилась на: ${arg}`);
+						mod.command.message(`Weather changed to: ${arg}`);
 					}
 					meteo();
 				} else {
-					mod.command.message("Некорректная погода. Доступные варианты: normal, snow, dark, night.");
+					mod.command.message("Invalid weather. Options: normal, snow, dark, night.");
 				}
 			} else if (weather[arg]) {
 				mod.settings.aeromanual = true;
 				mod.settings.aero = arg;
-				mod.command.message(`Погода включена: ${arg}`);
+				mod.command.message(`Weather enabled: ${arg}`);
 				meteo();
 			} else {
-				mod.command.message("Некорректная погода. Доступные варианты: normal, snow, dark, night.");
+				mod.command.message("Invalid weather. Options: normal, snow, dark, night.");
 			}
 		}
 	};
@@ -852,8 +840,8 @@ module.exports = function ProxyMenu(mod) {
 	});
 
 	mod.hook("S_ABNORMALITY_BEGIN", "*", { order: Infinity, filter: { fake: null } }, e => {
-		if (mod.game.me.is(e.target) && drinkAbnormalities.includes(e.id) && mod.settings.drunk) return false; // Отключение пьяного экрана от пива
-		if (mod.settings.brooch && e.id === 301806) return false; // Отключения эффекта новых брошек
+		if (mod.game.me.is(e.target) && drinkAbnormalities.includes(e.id) && mod.settings.drunk) return false;
+		if (mod.settings.brooch && e.id === 301806) return false;
 	});
 
 	mod.hook("S_DIALOG", "*", e => {
@@ -949,7 +937,7 @@ module.exports = function ProxyMenu(mod) {
 					opening = true;
 					openGacha(gachaId);
 					if (mod.game.inventory.getTotalAmount(gachaId) >= 5) {
-						mod.command.message("Открываю. Для остановки кликните еще раз на предмет.");
+						mod.command.message("Opening. Click the item again to stop.");
 					}
 				}
 			});
@@ -957,7 +945,7 @@ module.exports = function ProxyMenu(mod) {
 			opening = false;
 			openGacha(gachaId);
 			gachaId = null;
-			mod.command.message("Остановка.");
+			mod.command.message("Stopped.");
 			return false;
 		}
 	});
@@ -1022,14 +1010,14 @@ module.exports = function ProxyMenu(mod) {
 					opening = false; gacha = false;
 					if (mod.game.inventory.getTotalAmount(id) < 1) {
 						gachaId = null;
-						mod.command.message("Закончил открытие.");
+						mod.command.message("Finished opening.");
 					}
 				});
 			} else {
 				opening = false;
 				if (mod.game.inventory.getTotalAmount(id) < 1) {
 					gachaId = null;
-					mod.command.message("Закончил открытие.");
+					mod.command.message("Finished opening.");
 				}
 			}
 		}

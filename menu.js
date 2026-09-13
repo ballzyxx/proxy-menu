@@ -43,7 +43,7 @@ module.exports.premium = [
 	// { command: "store", id: 60262 },
 ];
 
-// Настройка меню
+// Menu setup
 module.exports.categories = {
 	Merchants: [
 		{ command: "m bank", name: "Bank", color: c.lp },
@@ -148,7 +148,7 @@ module.exports.categories = {
 		{},
 		{ command: "m exit", name: "Fast Exit Game", color: c.r }
 	],
-	"Гайд (tera-guide)": [
+	"Guide (tera-guide)": [
 		{ command: "guide", name: "On/Off", color: c.o },
 		{ command: "guide ui", name: "Settings", ifcmd: "guide" },
 		{ command: "guide voice", name: "Voice", color: c.y, ifcmd: "guide" },

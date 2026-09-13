@@ -58,7 +58,7 @@ Partial control for these modules:
 - Added merchant NPCs from major cities and Island of Dawn.
 
 10.12.24
-- English / Russian support (follows the Toolbox language).
+- Menu and chat messages are English only.
 
 ## Credits
 

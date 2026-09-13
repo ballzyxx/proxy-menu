@@ -1,10 +1,9 @@
 {
     "files": {
-        "README.md": "f89441843fbcd12d56e0d77585f61be496bbca13de13b9b39839acde135aca51",
+        "README.md": "3cca60729e97b3911d6420c9719a282a3b7c2bea1ed82d63b8f8a151c4cccf4a",
         "S_DIALOG.def": "0f7aace07a5bb15a0a09350c828c015c7055b6154ccd367f886fb7fafac45802",
-        "index.js": "ce674d68a08b11cc3b08f92492c8f9c0c00755fe66be9c3a0c74367da90b8bca",
-        "menu.js": "7a3954711f136b8c8b5f562c0f88855b4e6520a3400d041e60b2a1f7ecf49cdc",
-        "menu_ru.js": "6770224723f02d0cfd05b65065c89b516b6e53072eeb72fd274f77925a956a74",
+        "index.js": "ddea2f564f28e9fe14d07b1341510ebd5c8f83bf3b298d9479b947e07861b1bc",
+        "menu.js": "48eacace7426b8c6932fe354c0843b3456887dfbab2e2890d8479f699a9edd89",
         "module.json": "47da12ed90349092e66e9778c7f0410fcd7246399d78ed7bb609135f2a8c982f",
         "settings_migrator.js": "d17ff2a165a2c62ef8d57252c24e366b7d12e5b56034b094a4a2721fee404cac",
         "node_modules/moment-timezone/data/meta/latest.json": "1574fc70d8fd2554031aed90b1424371d6775bd9c0cab5cbd20e04753984f501",
