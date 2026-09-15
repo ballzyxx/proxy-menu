@@ -62,24 +62,93 @@ module.exports = function ProxyMenu(mod) {
 	const CITY_ZONES = new Set([13, 58, 63, 72, 81, 84, 183, 2800]);
 	const QUEST_DIALOG_TYPES = new Set([0, 1, 2, 3, 4, 5, 43, 51, 53, 54, 55, 56, 63]);
 	const DIALOG_SHOP_BUTTON = { 9: "store" };
+	const NPC_USE_RANGE = 400;
 	const CLASSIC_STORE_OPTS = [
+		{ templateId: 102, huntingZoneId: 2800, _value: 70310 },
+		{ templateId: 135, huntingZoneId: 599, _value: 59901 },
+		{ templateId: 158, huntingZoneId: 599, _value: 59901 },
 		{ templateId: 1001, huntingZoneId: 59, _value: 16059 },
 		{ templateId: 1001, huntingZoneId: 60, _value: 16060 },
+		{ templateId: 1001, huntingZoneId: 62, _value: 16062 },
 		{ templateId: 1001, huntingZoneId: 63, _value: 16063 },
+		{ templateId: 1001, huntingZoneId: 72, _value: 16072 },
 		{ templateId: 1002, huntingZoneId: 61, _value: 16061 },
 		{ templateId: 1002, huntingZoneId: 62, _value: 16062 },
 		{ templateId: 1002, huntingZoneId: 67, _value: 16067 },
 		{ templateId: 1002, huntingZoneId: 68, _value: 16068 },
+		{ templateId: 1002, huntingZoneId: 81, _value: 16081 },
 		{ templateId: 1003, huntingZoneId: 59, _value: 16059 },
 		{ templateId: 1003, huntingZoneId: 62, _value: 16062 },
 		{ templateId: 1003, huntingZoneId: 67, _value: 16067 },
 		{ templateId: 1004, huntingZoneId: 61, _value: 16061 },
 		{ templateId: 1004, huntingZoneId: 65, _value: 16065 },
+		{ templateId: 1015, huntingZoneId: 3051, _value: 2851665 },
+		{ templateId: 1020, huntingZoneId: 72, _value: 16072 },
 		{ templateId: 1035, huntingZoneId: 203, _value: 16087 },
+		{ templateId: 1037, huntingZoneId: 3051, _value: 2851665 },
+		{ templateId: 1049, huntingZoneId: 84, _value: 16084 },
+		{ templateId: 1055, huntingZoneId: 84, _value: 16084 },
+		{ templateId: 1062, huntingZoneId: 84, _value: 16084 },
 		{ templateId: 1103, huntingZoneId: 63, _value: 16063 },
-		{ templateId: 1124, huntingZoneId: 63, _value: 16063 }
+		{ templateId: 1124, huntingZoneId: 63, _value: 16063 },
+		{ templateId: 1222, huntingZoneId: 3051, _value: 2851665 },
+		{ templateId: 1303, huntingZoneId: 3051, _value: 2851665 },
+		{ templateId: 2001, huntingZoneId: 183, _value: 70310 },
+		{ templateId: 2018, huntingZoneId: 183, _value: 70310 },
+		{ templateId: 2019, huntingZoneId: 183, _value: 70310 },
+		{ templateId: 2022, huntingZoneId: 58, _value: 58001 },
+		{ templateId: 2023, huntingZoneId: 58, _value: 58001 },
+		{ templateId: 5001, huntingZoneId: 13, _value: 16091 },
+		{ templateId: 5101, huntingZoneId: 13, _value: 16092 },
+		{ templateId: 5201, huntingZoneId: 13, _value: 16092 },
+		{ templateId: 5301, huntingZoneId: 13, _value: 16092 }
 	];
-	const VELIKA_STORE_TEMPLATES = new Set([1001, 1103, 1124]);
+	const CLASSIC_SSTORE_OPTS = [
+		{ templateId: 103, huntingZoneId: 2800, _value: 250 },
+		{ templateId: 113, huntingZoneId: 2800, _value: 250 },
+		{ templateId: 1600, huntingZoneId: 59, _value: 250 },
+		{ templateId: 1600, huntingZoneId: 60, _value: 250 },
+		{ templateId: 1600, huntingZoneId: 61, _value: 250 },
+		{ templateId: 1600, huntingZoneId: 62, _value: 250 },
+		{ templateId: 1600, huntingZoneId: 63, _value: 250 },
+		{ templateId: 1600, huntingZoneId: 65, _value: 250 },
+		{ templateId: 1600, huntingZoneId: 67, _value: 250 },
+		{ templateId: 1600, huntingZoneId: 68, _value: 250 },
+		{ templateId: 1600, huntingZoneId: 72, _value: 250 },
+		{ templateId: 1600, huntingZoneId: 84, _value: 250 },
+		{ templateId: 1601, huntingZoneId: 59, _value: 250 },
+		{ templateId: 1601, huntingZoneId: 60, _value: 250 },
+		{ templateId: 1601, huntingZoneId: 61, _value: 250 },
+		{ templateId: 1601, huntingZoneId: 62, _value: 250 },
+		{ templateId: 1601, huntingZoneId: 63, _value: 250 },
+		{ templateId: 1601, huntingZoneId: 65, _value: 250 },
+		{ templateId: 1601, huntingZoneId: 67, _value: 250 },
+		{ templateId: 1601, huntingZoneId: 68, _value: 250 },
+		{ templateId: 1601, huntingZoneId: 72, _value: 250 },
+		{ templateId: 1601, huntingZoneId: 84, _value: 250 },
+		{ templateId: 2010, huntingZoneId: 58, _value: 58002 },
+		{ templateId: 2014, huntingZoneId: 183, _value: 250 },
+		{ templateId: 2109, huntingZoneId: 183, _value: 250 },
+		{ templateId: 2110, huntingZoneId: 183, _value: 250 },
+		{ templateId: 5004, huntingZoneId: 13, _value: 250 }
+	];
+	const CLASSIC_SSSTORE_OPTS = [
+		{ templateId: 105, huntingZoneId: 2800, _value: 111 },
+		{ templateId: 1097, huntingZoneId: 84, _value: 111 },
+		{ templateId: 1098, huntingZoneId: 84, _value: 111 },
+		{ templateId: 1183, huntingZoneId: 72, _value: 111 },
+		{ templateId: 2005, huntingZoneId: 183, _value: 111 },
+		{ templateId: 2015, huntingZoneId: 58, _value: 111 },
+		{ templateId: 2066, huntingZoneId: 183, _value: 111 },
+		{ templateId: 2069, huntingZoneId: 183, _value: 111 },
+		{ templateId: 30002, huntingZoneId: 63, _value: 111 },
+		{ templateId: 30003, huntingZoneId: 63, _value: 111 }
+	];
+	const CLASSIC_NPC_EXTRAS = {
+		store: CLASSIC_STORE_OPTS,
+		sstore: CLASSIC_SSTORE_OPTS,
+		ssstore: CLASSIC_SSSTORE_OPTS
+	};
 	const SHOP_DEFAULTS = {
 		store: 70310,
 		sstore: 250,
@@ -454,9 +523,36 @@ module.exports = function ProxyMenu(mod) {
 		if (!mod.settings.shopByServer || typeof mod.settings.shopByServer !== "object")
 			mod.settings.shopByServer = {};
 		const key = currentServerId();
-		if (!key) return null;
-		if (!mod.settings.shopByServer[key]) mod.settings.shopByServer[key] = {};
-		return mod.settings.shopByServer[key];
+		if (key) {
+			if (mod.settings.shopByServer[key]) return mod.settings.shopByServer[key];
+			const alt = key.startsWith("id:") ? key.slice(3) : `id:${key}`;
+			if (mod.settings.shopByServer[alt]) return mod.settings.shopByServer[alt];
+			mod.settings.shopByServer[key] = {};
+			return mod.settings.shopByServer[key];
+		}
+		const keys = Object.keys(mod.settings.shopByServer);
+		if (!keys.length) return null;
+		const preferred = keys.find(k => k === "2800" || k === "id:2800" || k.endsWith("2800")) || keys[0];
+		return mod.settings.shopByServer[preferred];
+	}
+
+	function findSavedShop(name) {
+		const bags = [];
+		const current = shopBag();
+		if (current) bags.push(current);
+		const all = mod.settings.shopByServer || {};
+		Object.keys(all).forEach(k => {
+			if (all[k] && all[k] !== current) bags.push(all[k]);
+		});
+		for (let i = 0; i < bags.length; i++) {
+			const e = bags[i][name];
+			if (e && e.hub && e.gameId && e.value) return e;
+		}
+		for (let i = 0; i < bags.length; i++) {
+			const e = bags[i][name];
+			if (e && e.gameId && e.value) return e;
+		}
+		return null;
 	}
 
 	function applyPersistedShops() {
@@ -512,22 +608,35 @@ module.exports = function ProxyMenu(mod) {
 	function storeCatalogForZone(zone) {
 		const z = Number(zone);
 		if (!Number.isFinite(z) || z <= 0) return SHOP_DEFAULTS.store;
-		if (z === 183 || z === 2800) return 70310;
-		if (z === 599) return 59901;
-		if (z === 58) return 58001;
-		if (z === 13) return 16091;
-		return 16000 + z;
+		if (REMOTE_HUB_ZONES.has(z)) return 70310;
+		const opts = npcOpts("store");
+		const hit = opts.find(o => o.huntingZoneId === z);
+		if (hit) return hit._value;
+		return SHOP_DEFAULTS.store;
+	}
+
+	function catalogValue(name, zone) {
+		if (name === "store") return storeCatalogForZone(zone);
+		const z = Number(zone);
+		const opts = npcOpts(name);
+		const hit = opts.find(o => o.huntingZoneId === z);
+		if (hit) return hit._value;
+		return SHOP_DEFAULTS[name];
 	}
 
 	function npcOpts(name) {
 		const npc = mod.settings.npc[name];
 		const opts = (npc && Array.isArray(npc.opts)) ? npc.opts.slice() : [];
-		if (name !== "store") return opts;
-		CLASSIC_STORE_OPTS.forEach(extra => {
-			if (!opts.some(o => o.templateId === extra.templateId && o.huntingZoneId === extra.huntingZoneId))
-				opts.push(extra);
-		});
-		return opts.filter(o => !(o.templateId === 1101 && o.huntingZoneId === 63));
+		const extras = CLASSIC_NPC_EXTRAS[name];
+		if (extras) {
+			extras.forEach(extra => {
+				if (!opts.some(o => o.templateId === extra.templateId && o.huntingZoneId === extra.huntingZoneId))
+					opts.push(extra);
+			});
+		}
+		if (name === "store")
+			return opts.filter(o => !(o.templateId === 1101 && o.huntingZoneId === 63));
+		return opts;
 	}
 
 	function currentZoneId() {
@@ -556,31 +665,93 @@ module.exports = function ProxyMenu(mod) {
 		return null;
 	}
 
+	function spawnLoc(event) {
+		if (event && event.loc) return event.loc;
+		if (event && event.x != null) return { x: event.x, y: event.y, z: event.z };
+		return null;
+	}
+
+	function playerLoc() {
+		try {
+			if (mod.game && mod.game.me && mod.game.me.loc) return mod.game.me.loc;
+		} catch (_) {}
+		if (locationEvent && locationEvent.loc) return locationEvent.loc;
+		return null;
+	}
+
+	function distSq(a, b) {
+		if (!a || !b || a.x == null || b.x == null) return Infinity;
+		const dx = a.x - b.x;
+		const dy = a.y - b.y;
+		return dx * dx + dy * dy;
+	}
+
 	function rememberSpawn(event) {
 		const gameId = toEntityId(event.gameId);
 		if (gameId == null) return;
-		const row = { gameId, templateId: Number(event.templateId), huntingZoneId: Number(event.huntingZoneId) };
+		const row = {
+			gameId,
+			templateId: Number(event.templateId),
+			huntingZoneId: Number(event.huntingZoneId),
+			loc: spawnLoc(event)
+		};
 		const i = spawnedNpcs.findIndex(s => String(s.gameId) === String(gameId));
 		if (i >= 0) spawnedNpcs[i] = row;
 		else spawnedNpcs.push(row);
 	}
 
-	function bestSpawnedStore() {
-		const opts = npcOpts("store");
+	function knownShopNpc(name, templateId, huntingZoneId) {
+		const tpl = Number(templateId);
+		const hz = Number(huntingZoneId);
+		if (!Number.isFinite(tpl)) return false;
+		const opts = npcOpts(name);
+		if (opts.some(o => o.templateId === tpl && o.huntingZoneId === hz)) return true;
+		if (REMOTE_HUB_ZONES.has(hz) && opts.some(o => o.templateId === tpl)) return true;
+		if (name === "store" && (tpl === 1103 || tpl === 1124)) return true;
+		if (name === "store" && tpl === 1001 && (hz === 63 || currentZoneId() === 63)) return true;
+		return false;
+	}
+
+	function dialogNpcStillSpawned() {
+		if (!lastDialog) return false;
+		const id = toEntityId(lastDialog.gameId);
+		if (id == null) return false;
+		return spawnedNpcs.some(s => String(s.gameId) === String(id));
+	}
+
+	function matchSpawnedShop(name, s) {
+		const opts = npcOpts(name);
+		const exact = opts.find(o => o.templateId === s.templateId && o.huntingZoneId === s.huntingZoneId);
+		if (exact) return exact._value;
 		const here = currentZoneId();
-		for (let i = spawnedNpcs.length - 1; i >= 0; i--) {
-			const s = spawnedNpcs[i];
-			const exact = opts.find(o => o.templateId === s.templateId && o.huntingZoneId === s.huntingZoneId);
-			if (exact) return { gameId: s.gameId, value: exact._value };
+		if (REMOTE_HUB_ZONES.has(here) || REMOTE_HUB_ZONES.has(s.huntingZoneId)) {
+			const byTpl = opts.find(o => o.templateId === s.templateId);
+			if (byTpl) return byTpl._value;
 		}
-		for (let i = spawnedNpcs.length - 1; i >= 0; i--) {
-			const s = spawnedNpcs[i];
-			if (s.templateId === 1103 || s.templateId === 1124)
-				return { gameId: s.gameId, value: 16063 };
-			if (s.templateId === 1001 && (s.huntingZoneId === 63 || here === 63))
-				return { gameId: s.gameId, value: 16063 };
-		}
+		if (name === "store" && (s.templateId === 1103 || s.templateId === 1124))
+			return catalogValue("store", here || s.huntingZoneId);
+		if (name === "store" && s.templateId === 1001 && (s.huntingZoneId === 63 || here === 63))
+			return 16063;
 		return null;
+	}
+
+	function bestSpawnedShop(name, nearbyOnly) {
+		const here = playerLoc();
+		const range = NPC_USE_RANGE * NPC_USE_RANGE;
+		let best = null;
+		let bestD = Infinity;
+		for (let i = 0; i < spawnedNpcs.length; i++) {
+			const s = spawnedNpcs[i];
+			const value = matchSpawnedShop(name, s);
+			if (value == null) continue;
+			const d = (!here || !s.loc) ? 0 : distSq(here, s.loc);
+			if (nearbyOnly && d > range) continue;
+			if (d <= bestD) {
+				bestD = d;
+				best = { gameId: s.gameId, value, nearby: d <= range };
+			}
+		}
+		return best;
 	}
 
 	function contactNpc(gameId, name) {
@@ -594,7 +765,7 @@ module.exports = function ProxyMenu(mod) {
 				if (pendingShop !== name) return;
 				clearPendingShop();
 				sendShopContract(name);
-			}, 400);
+			}, 800);
 			return true;
 		} catch (_) {
 			clearPendingShop();
@@ -648,16 +819,28 @@ module.exports = function ProxyMenu(mod) {
 	function sendShopContract(name) {
 		const npc = mod.settings.npc[name];
 		if (!npc) return;
-		const zone = currentZoneId();
-		const inVelika = zone === 63;
-		const spawned = (name === "store" && inVelika) ? bestSpawnedStore() : null;
-		const live = liveNpc.get(name) || spawned;
-		const bag = shopBag();
-		const saved = bag && bag[name];
-		const city = bag && bag[`${name}City`];
-		const fallback = name === "store" ? (inVelika ? 16063 : (saved && saved.value) || SHOP_DEFAULTS[name]) : SHOP_DEFAULTS[name];
-		const value = Number((live && live.value) || (inVelika && city && city.value) || (saved && saved.value) || fallback || npc.value) || 0;
-		const target = toEntityId(live && live.gameId) || (inVelika && city ? toEntityId(city.gameId) : null) || toEntityId(saved && saved.gameId) || 0;
+		let target = 0;
+		let value = Number(SHOP_DEFAULTS[name] || npc.value) || 0;
+		if (npc.type === 9) {
+			applyPersistedShops();
+			const saved = findSavedShop(name);
+			const savedId = toEntityId(saved && saved.gameId);
+			const settingsId = toEntityId(npc.gameId);
+			if (savedId) {
+				target = savedId;
+				value = Number(saved.value || SHOP_DEFAULTS[name] || npc.value) || 0;
+			} else if (settingsId) {
+				target = settingsId;
+				value = Number(SHOP_DEFAULTS[name] || npc.value) || 0;
+			} else {
+				const spawned = bestSpawnedShop(name, false);
+				if (spawned) {
+					target = toEntityId(spawned.gameId) || 0;
+					value = Number(spawned.value || value) || 0;
+					persistHubShop(name, spawned.gameId, spawned.value, currentZoneId());
+				}
+			}
+		}
 		const buffer = Buffer.alloc(4);
 		buffer.writeUInt32LE(value >>> 0);
 		mod.send("C_REQUEST_CONTRACT", 50, {
@@ -729,17 +912,24 @@ module.exports = function ProxyMenu(mod) {
 			];
 		}
 		const shops = {};
+		const tpl = event.questId != null ? event.questId : event.templateId;
 		for (let i = 0; i < entries.length; i++) {
 			const name = shopNameForValue(entries[i].type);
 			if (!name) continue;
-			persistHubShop(name, event.gameId, entries[i].type, event.huntingZoneId);
+			if (knownShopNpc(name, tpl, event.huntingZoneId))
+				persistHubShop(name, event.gameId, entries[i].type, event.huntingZoneId);
+			else
+				noteLive(name, event.gameId, entries[i].type);
 			shops[name] = { index: entries[i].index, value: entries[i].type };
 		}
 		for (let i = 0; i < entries.length; i++) {
 			const name = DIALOG_SHOP_BUTTON[entries[i].type];
 			if (!name || shops[name] || !mod.settings.npc[name]) continue;
-			const value = storeCatalogForZone(event.huntingZoneId);
-			persistHubShop(name, event.gameId, value, event.huntingZoneId);
+			const value = catalogValue(name, event.huntingZoneId || currentZoneId());
+			if (knownShopNpc(name, tpl, event.huntingZoneId))
+				persistHubShop(name, event.gameId, value, event.huntingZoneId);
+			else
+				noteLive(name, event.gameId, value);
 			shops[name] = { index: entries[i].index, value };
 		}
 		lastDialog = {
@@ -752,7 +942,12 @@ module.exports = function ProxyMenu(mod) {
 		};
 		if (pendingShop) {
 			const name = pendingShop;
-			if (clickDialogShop(name)) clearPendingShop();
+			if (clickDialogShop(name)) {
+				clearPendingShop();
+			} else {
+				clearPendingShop();
+				sendShopContract(name);
+			}
 		}
 	}
 	try {
@@ -952,11 +1147,6 @@ module.exports = function ProxyMenu(mod) {
 	};
 
 	function openRemoteNpc(name) {
-		const npc = mod.settings.npc[name];
-		if (!npc) return;
-		applyPersistedShops();
-		if (name === "store" && currentZoneId() === 63 && lastDialog && lastDialog.open && lastDialog.shops && lastDialog.shops.store && clickDialogShop(name))
-			return;
 		sendShopContract(name);
 	}
 
