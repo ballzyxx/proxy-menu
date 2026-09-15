@@ -12,5 +12,5 @@
     },
     "servers": ["https://raw.githubusercontent.com/ballzyxx/proxy-menu/main/"],
     "version": "7/7/2025",
-    "disableAutoUpdate": true
+    "disableAutoUpdate": false
 }
