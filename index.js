@@ -58,6 +58,10 @@ module.exports = function ProxyMenu(mod) {
 	let lastDialog = null;
 	let pendingShop = null;
 	let pendingShopTimer = null;
+	let shopChain = 0;
+	let lastShopSend = null;
+	const workingShop = new Map();
+	const seenShops = { store: [], sstore: [] };
 	const REMOTE_HUB_ZONES = new Set([183, 2800]);
 	const CITY_ZONES = new Set([13, 58, 63, 72, 81, 84, 183, 2800]);
 	const QUEST_DIALOG_TYPES = new Set([0, 1, 2, 3, 4, 5, 43, 51, 53, 54, 55, 56, 63]);
@@ -606,12 +610,14 @@ module.exports = function ProxyMenu(mod) {
 		const bag = shopBag();
 		if (!isHub && bag && bag[name] && bag[name].hub) {
 			bag[`${name}City`] = { gameId: String(id), value: v, zone: Number(zone) || 0 };
+			rememberSeenShop(name, id, v, false);
 			try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
 			return;
 		}
 		mod.settings.npc[name].gameId = id;
 		mod.settings.npc[name].value = v;
 		if (bag) bag[name] = { gameId: String(id), value: v, hub: !!isHub };
+		rememberSeenShop(name, id, v, isHub);
 		try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
 	}
 
@@ -851,16 +857,102 @@ module.exports = function ProxyMenu(mod) {
 		}
 	}
 
+	function rememberSeenShop(name, id, value, hub) {
+		if (name !== "store" && name !== "sstore") return;
+		const target = toEntityId(id);
+		const v = Number(value);
+		if (target == null || !Number.isFinite(v) || v <= 0) return;
+		const list = seenShops[name];
+		const key = String(target);
+		const i = list.findIndex(e => String(e.target) === key);
+		if (i >= 0) list.splice(i, 1);
+		if (hub) list.unshift({ target, value: v });
+		else list.push({ target, value: v });
+		if (list.length > 6) list.pop();
+	}
+
+	function pushShopCandidate(out, id, value) {
+		const target = toEntityId(id);
+		const v = Number(value);
+		if (target == null || !Number.isFinite(v) || v <= 0) return;
+		if (out.some(c => String(c.target) === String(target))) return;
+		out.push({ target, value: v });
+	}
+
+	function shopCandidates(name) {
+		const out = [];
+		const npc = mod.settings.npc[name];
+		const worked = workingShop.get(name);
+		if (worked) pushShopCandidate(out, worked.target, worked.value);
+		for (let i = 0; i < spawnedNpcs.length; i++) {
+			const s = spawnedNpcs[i];
+			if (!REMOTE_HUB_ZONES.has(s.huntingZoneId)) continue;
+			const value = matchSpawnedShop(name, s);
+			if (value != null) pushShopCandidate(out, s.gameId, value);
+		}
+		const saved = (shopBag() || {})[name];
+		const seen = seenShops[name] || [];
+		const savedId = saved && toEntityId(saved.gameId);
+		const savedIsLive = savedId != null && (
+			spawnedNpcs.some(s => String(s.gameId) === String(savedId))
+			|| seen.some(s => String(s.target) === String(savedId))
+		);
+		if (saved && savedIsLive)
+			pushShopCandidate(out, saved.gameId, saved.value || (npc && npc.value) || SHOP_DEFAULTS[name]);
+		const spawned = bestSpawnedShop(name, false);
+		if (spawned) pushShopCandidate(out, spawned.gameId, spawned.value);
+		if (saved)
+			pushShopCandidate(out, saved.gameId, saved.value || (npc && npc.value) || SHOP_DEFAULTS[name]);
+		if (npc) pushShopCandidate(out, npc.gameId, npc.value || SHOP_DEFAULTS[name]);
+		for (let i = 0; i < seen.length; i++) pushShopCandidate(out, seen[i].target, seen[i].value);
+		return out;
+	}
+
+	function dispatchShopContract(name, target, value) {
+		const npc = mod.settings.npc[name];
+		if (!npc) return;
+		const buffer = Buffer.alloc(4);
+		buffer.writeUInt32LE((Number(value) || 0) >>> 0);
+		mod.send("C_REQUEST_CONTRACT", 50, {
+			type: npc.type,
+			target: target || 0,
+			value: Number(value) || 0,
+			name: "",
+			data: buffer
+		});
+	}
+
+	function openChainedShop(name) {
+		applyPersistedShops();
+		const token = ++shopChain;
+		const candidates = shopCandidates(name);
+		const step = (index) => {
+			if (token !== shopChain) return;
+			if (index >= candidates.length) {
+				if (index === 0) dispatchShopContract(name, 0, SHOP_DEFAULTS[name] || 0);
+				return;
+			}
+			const c = candidates[index];
+			lastShopSend = { name, target: c.target, value: c.value, token };
+			dispatchShopContract(name, c.target, c.value);
+			if (index + 1 < candidates.length)
+				mod.setTimeout(() => step(index + 1), 650);
+		};
+		step(0);
+	}
+
 	function sendShopContract(name) {
 		const npc = mod.settings.npc[name];
 		if (!npc) return;
+		if (name === "store" || name === "sstore") {
+			openChainedShop(name);
+			return;
+		}
 		let target = 0;
 		let value = Number(SHOP_DEFAULTS[name] || npc.value) || 0;
 		if (npc.type === 9) {
 			applyPersistedShops();
-			const saved = (name === "store" || name === "sstore")
-				? ((shopBag() || {})[name] || null)
-				: findSavedShop(name);
+			const saved = findSavedShop(name);
 			const savedId = toEntityId(saved && saved.gameId);
 			const settingsId = toEntityId(npc.gameId);
 			if (savedId) {
@@ -869,7 +961,7 @@ module.exports = function ProxyMenu(mod) {
 			} else if (settingsId) {
 				target = settingsId;
 				value = Number(SHOP_DEFAULTS[name] || npc.value) || 0;
-			} else if (name !== "store" && name !== "sstore") {
+			} else {
 				const spawned = bestSpawnedShop(name, false);
 				if (spawned) {
 					target = toEntityId(spawned.gameId) || 0;
@@ -878,21 +970,17 @@ module.exports = function ProxyMenu(mod) {
 				}
 			}
 		}
-		const buffer = Buffer.alloc(4);
-		buffer.writeUInt32LE(value >>> 0);
-		mod.send("C_REQUEST_CONTRACT", 50, {
-			type: npc.type,
-			target,
-			value,
-			name: "",
-			data: buffer
-		});
+		dispatchShopContract(name, target, value);
 	}
 
 	applyPersistedShops();
 	try {
 		mod.game.on("enter_game", () => {
 			lastServerKey = null;
+			workingShop.clear();
+			seenShops.store.length = 0;
+			seenShops.sstore.length = 0;
+			shopChain++;
 			applyPersistedShops();
 		});
 	} catch (_) {}
@@ -934,6 +1022,7 @@ module.exports = function ProxyMenu(mod) {
 		spawnedNpcs.length = 0;
 		lastDialog = null;
 		clearPendingShop();
+		shopChain++;
 	});
 
 	function hookDialog(event) {
@@ -1341,6 +1430,10 @@ module.exports = function ProxyMenu(mod) {
 	mod.hook("S_REQUEST_CONTRACT", 1, e => {
 		contract = e.id;
 		contractType = e.type;
+		if (Number(e.type) === 9 && lastShopSend && lastShopSend.token === shopChain) {
+			workingShop.set(lastShopSend.name, { target: lastShopSend.target, value: lastShopSend.value });
+			shopChain++;
+		}
 		if (!debug) return;
 		debugData.push(`   "type": ${e.type}`);
 		debugData.forEach(data => {
