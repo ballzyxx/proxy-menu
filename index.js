@@ -674,21 +674,6 @@ module.exports = function ProxyMenu(mod) {
 		npc.opts.push({ templateId: tpl, huntingZoneId: hz, _value: v });
 	}
 
-	function localMerchant(name) {
-		const opts = npcOpts(name);
-		const here = currentZoneId();
-		let contact = null;
-		for (let i = 0; i < spawnedNpcs.length; i++) {
-			const s = spawnedNpcs[i];
-			const exact = opts.find(o => o.templateId === s.templateId && (o.huntingZoneId === s.huntingZoneId || o.huntingZoneId === here));
-			if (exact && exact._value)
-				return { gameId: s.gameId, value: Number(exact._value), contact: false };
-			if (!contact && opts.some(o => o.templateId === s.templateId))
-				contact = { gameId: s.gameId, contact: true };
-		}
-		return contact;
-	}
-
 	function currentZoneId() {
 		try {
 			if (mod.game && mod.game.me && mod.game.me.zone != null) return Number(mod.game.me.zone);
@@ -884,7 +869,7 @@ module.exports = function ProxyMenu(mod) {
 			} else if (settingsId) {
 				target = settingsId;
 				value = Number(SHOP_DEFAULTS[name] || npc.value) || 0;
-			} else {
+			} else if (name !== "store" && name !== "sstore") {
 				const spawned = bestSpawnedShop(name, false);
 				if (spawned) {
 					target = toEntityId(spawned.gameId) || 0;
@@ -1199,34 +1184,7 @@ module.exports = function ProxyMenu(mod) {
 		}
 	};
 
-	function contractShop(name, gameId, value) {
-		const npc = mod.settings.npc[name];
-		if (!npc) return;
-		const buffer = Buffer.alloc(4);
-		buffer.writeUInt32LE(Number(value) >>> 0);
-		mod.send("C_REQUEST_CONTRACT", 50, {
-			type: npc.type,
-			target: toEntityId(gameId) || 0,
-			value: Number(value) || 0,
-			name: "",
-			data: buffer
-		});
-	}
-
 	function openRemoteNpc(name) {
-		if (name === "store" || name === "sstore") {
-			applyPersistedShops();
-			const local = localMerchant(name);
-			if (local && local.contact) {
-				contactNpc(local.gameId, name);
-				return;
-			}
-			if (local && local.value) {
-				contractShop(name, local.gameId, local.value);
-				persistHubShop(name, local.gameId, local.value, currentZoneId());
-				return;
-			}
-		}
 		sendShopContract(name);
 	}
 
