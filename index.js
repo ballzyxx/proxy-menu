@@ -508,32 +508,45 @@ module.exports = function ProxyMenu(mod) {
 		return n;
 	}
 
+	function currentServer() {
+		let id = null;
+		let name = "";
+		try {
+			if (mod.serverId != null && mod.serverId !== "") id = mod.serverId;
+			else if (mod.game && mod.game.me && mod.game.me.serverId != null && mod.game.me.serverId !== "")
+				id = mod.game.me.serverId;
+		} catch (_) {}
+		if (id == null || id === "") return null;
+		try {
+			const list = mod.serverList || (mod.connection && mod.connection.metadata && mod.connection.metadata.serverList);
+			if (list && list[id] && list[id].name) name = String(list[id].name);
+		} catch (_) {}
+		const idStr = String(id);
+		return { id: idStr, name, key: name ? `${idStr}-${name}` : idStr };
+	}
+
 	function currentServerId() {
-		try {
-			if (mod.serverId != null && mod.serverId !== "") return String(mod.serverId);
-		} catch (_) {}
-		try {
-			if (mod.game && mod.game.me && mod.game.me.serverId != null && mod.game.me.serverId !== "")
-				return String(mod.game.me.serverId);
-		} catch (_) {}
-		return null;
+		const server = currentServer();
+		return server ? server.key : null;
 	}
 
 	function shopBag() {
 		if (!mod.settings.shopByServer || typeof mod.settings.shopByServer !== "object")
 			mod.settings.shopByServer = {};
-		const key = currentServerId();
-		if (key) {
-			if (mod.settings.shopByServer[key]) return mod.settings.shopByServer[key];
-			const alt = key.startsWith("id:") ? key.slice(3) : `id:${key}`;
-			if (mod.settings.shopByServer[alt]) return mod.settings.shopByServer[alt];
-			mod.settings.shopByServer[key] = {};
-			return mod.settings.shopByServer[key];
+		const server = currentServer();
+		if (!server) return null;
+		const bags = mod.settings.shopByServer;
+		if (bags[server.key] && typeof bags[server.key] === "object") return bags[server.key];
+		const legacy = bags[server.id];
+		if (server.name && legacy && typeof legacy === "object" && !bags._legacyClaimed) {
+			bags[server.key] = legacy;
+			delete bags[server.id];
+			bags._legacyClaimed = server.key;
+			try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
+			return bags[server.key];
 		}
-		const keys = Object.keys(mod.settings.shopByServer);
-		if (!keys.length) return null;
-		const preferred = keys.find(k => k === "2800" || k === "id:2800" || k.endsWith("2800")) || keys[0];
-		return mod.settings.shopByServer[preferred];
+		bags[server.key] = {};
+		return bags[server.key];
 	}
 
 	function findSavedShop(name) {
@@ -568,6 +581,11 @@ module.exports = function ProxyMenu(mod) {
 			if (id == null || !Number.isFinite(v) || v <= 0) return;
 			mod.settings.npc[name].gameId = id;
 			mod.settings.npc[name].value = v;
+		});
+		["store", "sstore"].forEach(name => {
+			if (!mod.settings.npc[name]) return;
+			if (bag[name] && bag[name].gameId && bag[name].value) return;
+			mod.settings.npc[name].gameId = null;
 		});
 	}
 
@@ -637,6 +655,38 @@ module.exports = function ProxyMenu(mod) {
 		if (name === "store")
 			return opts.filter(o => !(o.templateId === 1101 && o.huntingZoneId === 63));
 		return opts;
+	}
+
+	function learnShopOpt(name, templateId, huntingZoneId, value) {
+		if (name !== "store" && name !== "sstore") return;
+		const tpl = Number(templateId);
+		const hz = Number(huntingZoneId);
+		const v = Number(value);
+		if (!Number.isFinite(tpl) || tpl <= 0 || !Number.isFinite(hz) || hz <= 0 || !Number.isFinite(v) || v <= 0) return;
+		if (shopNameForValue(v) !== name) return;
+		const npc = mod.settings.npc[name];
+		if (!npc) return;
+		if (!Array.isArray(npc.opts)) npc.opts = [];
+		if (npc.opts.some(o => o.templateId === tpl && o.huntingZoneId === hz)) return;
+		const knownTemplate = npc.opts.some(o => o.templateId === tpl)
+			|| (CLASSIC_NPC_EXTRAS[name] || []).some(o => o.templateId === tpl);
+		if (!knownTemplate) return;
+		npc.opts.push({ templateId: tpl, huntingZoneId: hz, _value: v });
+	}
+
+	function localMerchant(name) {
+		const opts = npcOpts(name);
+		const here = currentZoneId();
+		let contact = null;
+		for (let i = 0; i < spawnedNpcs.length; i++) {
+			const s = spawnedNpcs[i];
+			const exact = opts.find(o => o.templateId === s.templateId && (o.huntingZoneId === s.huntingZoneId || o.huntingZoneId === here));
+			if (exact && exact._value)
+				return { gameId: s.gameId, value: Number(exact._value), contact: false };
+			if (!contact && opts.some(o => o.templateId === s.templateId))
+				contact = { gameId: s.gameId, contact: true };
+		}
+		return contact;
 	}
 
 	function currentZoneId() {
@@ -823,7 +873,9 @@ module.exports = function ProxyMenu(mod) {
 		let value = Number(SHOP_DEFAULTS[name] || npc.value) || 0;
 		if (npc.type === 9) {
 			applyPersistedShops();
-			const saved = findSavedShop(name);
+			const saved = (name === "store" || name === "sstore")
+				? ((shopBag() || {})[name] || null)
+				: findSavedShop(name);
 			const savedId = toEntityId(saved && saved.gameId);
 			const settingsId = toEntityId(npc.gameId);
 			if (savedId) {
@@ -916,6 +968,7 @@ module.exports = function ProxyMenu(mod) {
 		for (let i = 0; i < entries.length; i++) {
 			const name = shopNameForValue(entries[i].type);
 			if (!name) continue;
+			learnShopOpt(name, tpl, event.huntingZoneId, entries[i].type);
 			if (knownShopNpc(name, tpl, event.huntingZoneId))
 				persistHubShop(name, event.gameId, entries[i].type, event.huntingZoneId);
 			else
@@ -1146,7 +1199,34 @@ module.exports = function ProxyMenu(mod) {
 		}
 	};
 
+	function contractShop(name, gameId, value) {
+		const npc = mod.settings.npc[name];
+		if (!npc) return;
+		const buffer = Buffer.alloc(4);
+		buffer.writeUInt32LE(Number(value) >>> 0);
+		mod.send("C_REQUEST_CONTRACT", 50, {
+			type: npc.type,
+			target: toEntityId(gameId) || 0,
+			value: Number(value) || 0,
+			name: "",
+			data: buffer
+		});
+	}
+
 	function openRemoteNpc(name) {
+		if (name === "store" || name === "sstore") {
+			applyPersistedShops();
+			const local = localMerchant(name);
+			if (local && local.contact) {
+				contactNpc(local.gameId, name);
+				return;
+			}
+			if (local && local.value) {
+				contractShop(name, local.gameId, local.value);
+				persistHubShop(name, local.gameId, local.value, currentZoneId());
+				return;
+			}
+		}
 		sendShopContract(name);
 	}
 
