@@ -262,6 +262,8 @@ module.exports = function ProxyMenu(mod) {
 	const liveInstanceIds = new Set();
 	const clientEvents = new Map();
 	let eventListParsed = false;
+	let serverEventIds = null;
+	let dangShownAt = 0;
 
 	if (mod.majorPatchVersion >= 94) {
 		// enable padding
@@ -430,19 +432,33 @@ module.exports = function ProxyMenu(mod) {
 	function onEventMatchingList(event) {
 		const rows = event.events || event.quests || [];
 		eventListParsed = true;
-		ingestEventIds(rows.map(row => row.id), true);
+		serverEventIds = rows.map(row => Number(row.id)).filter(id => id > 0);
+		applyServerDungeons();
 	}
 
-	function idsInEventBuffer(buf) {
-		const found = dungeonData.scanBufferForQuests(buf);
-		if (!buf || buf.length < 8) return found;
-		const extra = new Set();
-		clientEvents.forEach((_, id) => extra.add(Number(id)));
+	function dungeonIdsInBuffer(buf) {
+		const found = [];
+		if (!buf || buf.length < 8 || !clientEvents.size) return found;
+		const seen = new Set();
 		for (let i = 4; i + 4 <= buf.length; i += 4) {
 			const value = buf.readInt32LE(i);
-			if (extra.has(value)) found.add(value);
+			if (!clientEvents.has(value) || seen.has(value)) continue;
+			seen.add(value);
+			found.push(value);
 		}
 		return found;
+	}
+
+	function applyServerDungeons() {
+		if (!serverEventIds || !clientEvents.size) return;
+		const ids = serverEventIds.filter(id => clientEvents.has(id));
+		liveQuestIds.clear();
+		ids.forEach(id => liveQuestIds.add(id));
+		saveServerDungeons();
+		if (dangShownAt && Date.now() - dangShownAt < 2000) {
+			dangShownAt = 0;
+			show("dang", { silent: true });
+		}
 	}
 
 	try {
@@ -454,7 +470,10 @@ module.exports = function ProxyMenu(mod) {
 	try {
 		mod.hook("S_AVAILABLE_EVENT_MATCHING_LIST", "raw", buf => {
 			if (eventListParsed) return;
-			ingestEventIds(Array.from(idsInEventBuffer(buf)), true);
+			const ids = dungeonIdsInBuffer(buf);
+			if (!ids.length) return;
+			serverEventIds = ids;
+			applyServerDungeons();
 		});
 	} catch (_) {}
 
@@ -1840,8 +1859,12 @@ module.exports = function ProxyMenu(mod) {
 		return require(data);
 	}
 
-	function show(page = null) {
-		if (page === "dang") requestVanguardList();
+	function show(page = null, options = null) {
+		const silent = !!(options && options.silent);
+		if (page === "dang" && !silent) {
+			dangShownAt = Date.now();
+			requestVanguardList();
+		}
 		const categories = page === "dang"
 			? buildDungeonPage()
 			: (menu.pages !== undefined && menu.pages[page] ? menu.pages[page] : menu.categories);
@@ -1985,40 +2008,78 @@ module.exports = function ProxyMenu(mod) {
 		return null;
 	}
 
+	function cleanDungeonName(name) {
+		return String(name || "")
+			.replace(/<[^>]+>/g, "")
+			.replace(/\s*\((?:hard(?:\s*mode)?|normal(?:\s*mode)?|hm|nm|easy|solo|guide|extreme|\d+-person)\)\s*/gi, "")
+			.replace(/\s*-\s*(?:hm|nm|hard|normal|guide).*$/i, "")
+			.replace(/\s+(?:hard|normal)(?:\s+mode)?$/i, "")
+			.replace(/\s+/g, " ")
+			.trim();
+	}
+
+	function isHardDungeonName(name) {
+		return /\(\s*hard|\bhard(?:\s+mode)?\b|\bhm\b/i.test(String(name || ""));
+	}
+
+	function dungeonLabel(info) {
+		if (!info) return "";
+		const cleaned = cleanDungeonName(info.sheet || "");
+		if (cleaned && !/^dungeon\s+\d+$/i.test(cleaned)) return cleaned;
+		const known = dungeonData.displayName(info.instance, "");
+		if (known && !/^dungeon\s+\d+$/i.test(known)) return known;
+		return "";
+	}
+
 	async function loadClientDungeonEvents() {
 		const queryData = getQueryData();
 		if (!queryData) return;
-		try {
-			const result = await queryData("/EventMatching/EventGroup/Event@type=?", ["Dungeon"], true, true, ["id", "requiredItemLevel"]);
-			if (!result || !result.length) return;
-			const byZone = new Map();
-			result.forEach(entry => {
-				const eventId = Number(entry.attributes && entry.attributes.id);
-				if (!eventId) return;
-				let zoneId = 0;
-				const targetList = (entry.children || []).find(child => child.name === "TargetList");
-				const target = targetList && (targetList.children || []).find(child => child.name === "Target");
-				if (target && target.attributes) zoneId = Number(target.attributes.id) || 0;
-				clientEvents.set(eventId, {
-					quest: eventId,
-					instance: zoneId,
-					name: dungeonData.displayName(zoneId, ""),
-					ilvl: entry.attributes && entry.attributes.requiredItemLevel
-				});
-				if (zoneId) byZone.set(zoneId, eventId);
-			});
+		clientEvents.clear();
+		const byZone = new Map();
+		for (const type of ["Dungeon", "SoloDungeon"]) {
 			try {
-				const names = await queryData("/StrSheet_Dungeon/String@id=?", [[...byZone.keys()]], true);
-				(names || []).forEach(row => {
-					const zoneId = Number(row.attributes && row.attributes.id);
-					const eventId = byZone.get(zoneId);
-					if (eventId && clientEvents.has(eventId) && row.attributes && row.attributes.string) {
-						clientEvents.get(eventId).name = dungeonData.displayName(zoneId, row.attributes.string);
-					}
+				const result = await queryData("/EventMatching/EventGroup/Event@type=?", [type], true, true, ["id", "questId", "type", "requiredItemLevel"]);
+				(result || []).forEach(entry => {
+					const eventId = Number(entry.attributes && entry.attributes.id);
+					if (!eventId) return;
+					const action = (entry.children || []).find(child => child.name === "Action");
+					const actionType = String(action && action.attributes && action.attributes.type || "").toLowerCase();
+					if (actionType && actionType !== "matching" && actionType !== "teleport") return;
+					const targetList = (entry.children || []).find(child => child.name === "TargetList");
+					const target = targetList && (targetList.children || []).find(child => child.name === "Target");
+					const zoneId = Number(target && target.attributes && target.attributes.id) || 0;
+					if (!zoneId) return;
+					clientEvents.set(eventId, {
+						quest: eventId,
+						instance: zoneId,
+						sheet: "",
+						hard: false,
+						ilvl: entry.attributes && entry.attributes.requiredItemLevel
+					});
+					if (!byZone.has(zoneId)) byZone.set(zoneId, []);
+					byZone.get(zoneId).push(eventId);
 				});
 			} catch (_) {}
-			if (debug) mod.command.message(`Client dungeon data: ${clientEvents.size} events`);
+		}
+		try {
+			const zones = [...byZone.keys()];
+			if (zones.length) {
+				const names = await queryData("/StrSheet_Dungeon/String@id=?", [zones], true);
+				(names || []).forEach(row => {
+					const zoneId = Number(row.attributes && row.attributes.id);
+					const sheet = row.attributes && row.attributes.string;
+					if (!sheet) return;
+					(byZone.get(zoneId) || []).forEach(eventId => {
+						const info = clientEvents.get(eventId);
+						if (!info) return;
+						info.sheet = sheet;
+						info.hard = isHardDungeonName(sheet);
+					});
+				});
+			}
 		} catch (_) {}
+		if (debug) mod.command.message(`Client dungeon data: ${clientEvents.size} events`);
+		applyServerDungeons();
 	}
 
 	function instanceForQuest(quest) {
@@ -2089,42 +2150,22 @@ module.exports = function ProxyMenu(mod) {
 			name: "City (Vanguard store)",
 			color: dungeonData.C.o
 		}];
-		const detected = [];
-
-		clientEvents.forEach((info, quest) => {
-			if (liveQuestIds.size && !dungeonData.resolveLiveQuest([quest], liveQuestIds)) return;
-			const inst = Number(info.instance) || instanceForQuest(quest);
-			if (!inst) return;
-			detected.push({
-				quest: dungeonData.resolveLiveQuest([quest], liveQuestIds) || quest,
-				instance: inst,
-				name: dungeonData.displayName(inst, info.name)
-			});
+		const byName = new Map();
+		clientEvents.forEach((info, eventId) => {
+			if (!liveQuestIds.has(Number(eventId))) return;
+			const name = dungeonLabel(info);
+			if (!name) return;
+			const key = name.toLowerCase();
+			const prev = byName.get(key);
+			const next = {
+				quest: Number(eventId),
+				instance: Number(info.instance),
+				name,
+				hard: !!info.hard
+			};
+			if (!prev || (prev.hard && !next.hard)) byName.set(key, next);
 		});
-
-		dungeonData.CATALOG.forEach(entry => {
-			const liveQuest = dungeonData.resolveLiveQuest(entry.quests, liveQuestIds);
-			const instanceKnown = liveInstanceIds.has(entry.instance);
-			if (liveQuestIds.size && !liveQuest && !instanceKnown) return;
-			if (!liveQuestIds.size && !liveInstanceIds.size && clientEvents.size) return;
-			detected.push({
-				quest: liveQuest || Number(mod.settings.dungeonQuests && mod.settings.dungeonQuests[String(entry.instance)]) || entry.quests[0],
-				instance: entry.instance,
-				name: entry.name
-			});
-		});
-
-		liveQuestIds.forEach(quest => {
-			if (clientEvents.has(quest) || dungeonData.findByQuest(quest).length) return;
-			const inst = instanceForQuest(quest) || quest;
-			detected.push({
-				quest,
-				instance: inst,
-				name: dungeonData.displayName(inst)
-			});
-		});
-
-		const unique = dungeonData.dedupeEntries(detected)
+		const unique = Array.from(byName.values())
 			.sort((a, b) => a.name.localeCompare(b.name));
 		if (!unique.length) {
 			return { Scan: scan };
@@ -2164,44 +2205,25 @@ module.exports = function ProxyMenu(mod) {
 		if (teleportBusy) return;
 
 		if (!mod.settings.dungeonQuests) mod.settings.dungeonQuests = {};
-		const allInstances = familyInstances(inst, dungeonData.displayName(inst));
-		const knownInstances = allInstances.filter(id => instanceKnownOnServer(id));
-		const order = knownInstances.length ? knownInstances : allInstances;
+		const clicked = clientEvents.get(primary);
+		const label = dungeonLabel(clicked) || dungeonData.displayName(inst);
 		const pairs = [];
 		const addPair = (questId, instanceId) => {
 			const q = Number(questId);
 			const i = Number(instanceId);
 			if (!Number.isFinite(q) || q <= 0 || !Number.isFinite(i) || i <= 0) return;
 			if (pairs.some(pair => pair.quest === q && pair.instance === i)) return;
-			if (pairs.length >= 8) return;
 			pairs.push({ quest: q, instance: i });
 		};
-		order.forEach(i => {
-			const quests = [];
-			const addQuest = (value) => {
-				const n = Number(value);
-				if (!Number.isFinite(n) || n <= 0 || quests.includes(n)) return;
-				quests.push(n);
-			};
-			liveQuestIds.forEach(id => {
-				if (questMapsToInstance(id, i)) addQuest(id);
-			});
-			addQuest(mod.settings.dungeonQuests[String(i)]);
-			dungeonData.questsForInstance(i).forEach(id => {
-				dungeonData.variants(id).forEach(variant => {
-					if (!liveQuestIds.size || liveQuestIds.has(variant)) addQuest(variant);
-				});
-			});
-			(DUNGEON_QUEST_FALLBACKS[i] || []).forEach(addQuest);
-			if (i === inst) {
-				addQuest(primary);
-				dungeonData.variants(primary).forEach(variant => {
-					if (!liveQuestIds.size || liveQuestIds.has(variant)) addQuest(variant);
-				});
-			}
-			if (!quests.length) addQuest(primary);
-			quests.forEach(q => addPair(q, i));
+		const sameName = [];
+		clientEvents.forEach((info, eventId) => {
+			if (!liveQuestIds.has(Number(eventId))) return;
+			if (dungeonLabel(info).toLowerCase() !== String(label || "").toLowerCase()) return;
+			sameName.push({ quest: Number(eventId), instance: Number(info.instance), hard: !!info.hard });
 		});
+		sameName.sort((a, b) => Number(a.hard) - Number(b.hard));
+		sameName.forEach(entry => addPair(entry.quest, entry.instance));
+		if (!pairs.length && clicked) addPair(primary, clicked.instance);
 		if (!pairs.length) addPair(primary, inst);
 
 		teleportBusy = true;
