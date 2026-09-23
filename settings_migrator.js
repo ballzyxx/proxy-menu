@@ -26,6 +26,7 @@ const DefaultSettings = {
 	dungeonInstances: {},
 	lastVanguardQuests: [],
 	lastVanguardInstances: [],
+	dungeonsByServer: {},
 	shopByServer: {},
 	npc: {
 		// For bank NPC.

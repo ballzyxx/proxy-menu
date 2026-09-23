@@ -223,8 +223,9 @@ function slug(name) {
 
 function stripMode(name) {
 	return String(name || "")
-		.replace(/\s*\((?:Hard|HM|Easy|NM|Solo|Guide|Extreme|5-Person|7-Person|10-Person|20-Person|3-Person)\)\s*/gi, "")
-		.replace(/\s*-\s*(?:HM|NM|Hard|Guide).*$/i, "")
+		.replace(/\s*\((?:hard(?:\s*mode)?|normal(?:\s*mode)?|hm|nm|easy|solo|guide|extreme|\d+-person)\)\s*/gi, "")
+		.replace(/\s*-\s*(?:hm|nm|hard|normal|guide).*$/i, "")
+		.replace(/\s+(?:hard|normal)(?:\s+mode)?$/i, "")
 		.replace(/\s+entrance$/i, "")
 		.replace(/\s+/g, " ")
 		.trim();

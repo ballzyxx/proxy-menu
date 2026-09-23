@@ -384,12 +384,46 @@ module.exports = function ProxyMenu(mod) {
 		if (debug) console.log("C_REQUEST_EVENT_MATCHING_TELEPORT:", event);
 	});
 
+	function dungeonBag() {
+		if (!mod.settings.dungeonsByServer || typeof mod.settings.dungeonsByServer !== "object")
+			mod.settings.dungeonsByServer = {};
+		const server = currentServer();
+		if (!server) return null;
+		const bags = mod.settings.dungeonsByServer;
+		if (!bags[server.key] || typeof bags[server.key] !== "object")
+			bags[server.key] = { quests: [], instances: [] };
+		return bags[server.key];
+	}
+
+	function saveServerDungeons() {
+		const bag = dungeonBag();
+		if (!bag) return;
+		bag.quests = Array.from(liveQuestIds);
+		bag.instances = Array.from(liveInstanceIds);
+		try { if (typeof mod.saveSettings === "function") mod.saveSettings(); } catch (_) {}
+	}
+
+	function loadServerDungeons() {
+		const bag = dungeonBag();
+		if (!bag) return;
+		liveQuestIds.clear();
+		liveInstanceIds.clear();
+		(bag.quests || []).forEach(id => {
+			const n = Number(id);
+			if (n > 0) liveQuestIds.add(n);
+		});
+		(bag.instances || []).forEach(id => {
+			const n = Number(id);
+			if (n > 0) liveInstanceIds.add(n);
+		});
+	}
+
 	function ingestEventIds(ids, replace) {
 		const next = (ids || []).map(Number).filter(n => Number.isFinite(n) && n > 0);
 		if (!next.length) return;
 		if (replace) liveQuestIds.clear();
 		next.forEach(id => liveQuestIds.add(id));
-		mod.settings.lastVanguardQuests = Array.from(liveQuestIds);
+		saveServerDungeons();
 		if (debug) mod.command.message(`Vanguard list: ${liveQuestIds.size} events`);
 	}
 
@@ -399,13 +433,28 @@ module.exports = function ProxyMenu(mod) {
 		ingestEventIds(rows.map(row => row.id), true);
 	}
 
+	function idsInEventBuffer(buf) {
+		const found = dungeonData.scanBufferForQuests(buf);
+		if (!buf || buf.length < 8) return found;
+		const extra = new Set();
+		clientEvents.forEach((_, id) => extra.add(Number(id)));
+		for (let i = 4; i + 4 <= buf.length; i += 4) {
+			const value = buf.readInt32LE(i);
+			if (extra.has(value)) found.add(value);
+		}
+		return found;
+	}
+
 	try {
-		mod.hook("S_AVAILABLE_EVENT_MATCHING_LIST", 1, onEventMatchingList);
-	} catch (_) {}
+		mod.hook("S_AVAILABLE_EVENT_MATCHING_LIST", "*", onEventMatchingList);
+	} catch (_) {
+		try { mod.hook("S_AVAILABLE_EVENT_MATCHING_LIST", 1, onEventMatchingList); } catch (__) {}
+		try { mod.hook("S_AVAILABLE_EVENT_MATCHING_LIST", 2, onEventMatchingList); } catch (__) {}
+	}
 	try {
 		mod.hook("S_AVAILABLE_EVENT_MATCHING_LIST", "raw", buf => {
 			if (eventListParsed) return;
-			ingestEventIds(Array.from(dungeonData.scanBufferForQuests(buf)), false);
+			ingestEventIds(Array.from(idsInEventBuffer(buf)), true);
 		});
 	} catch (_) {}
 
@@ -416,16 +465,14 @@ module.exports = function ProxyMenu(mod) {
 				const id = Number(row.id);
 				if (id > 0) liveInstanceIds.add(id);
 			});
-			mod.settings.lastVanguardInstances = Array.from(liveInstanceIds);
+			saveServerDungeons();
 		});
 	} catch (_) {}
-
-	(mod.settings.lastVanguardQuests || []).forEach(id => liveQuestIds.add(Number(id)));
-	(mod.settings.lastVanguardInstances || []).forEach(id => liveInstanceIds.add(Number(id)));
 
 	if (mod.game && typeof mod.game.on === "function") {
 		mod.game.on("enter_game", () => {
 			eventListParsed = false;
+			loadServerDungeons();
 			loadClientDungeonEvents();
 			mod.setTimeout(requestVanguardList, 1500);
 		});
@@ -1919,6 +1966,9 @@ module.exports = function ProxyMenu(mod) {
 		if (!mod.settings.dungeonInstances) mod.settings.dungeonInstances = {};
 		mod.settings.dungeonQuests[String(inst)] = q;
 		mod.settings.dungeonInstances[String(q)] = inst;
+		liveQuestIds.add(q);
+		liveInstanceIds.add(inst);
+		saveServerDungeons();
 	}
 
 	function requestVanguardList() {
@@ -2006,12 +2056,33 @@ module.exports = function ProxyMenu(mod) {
 		if (list.length && list[list.length - 1].command) list.push({});
 	}
 
+	function familyInstances(instance, name) {
+		const family = dungeonData.familyFor(instance, name);
+		const list = (family.instances || []).map(Number).filter(id => id > 0);
+		if (!list.length && Number(instance) > 0) list.push(Number(instance));
+		return list;
+	}
+
+	function instanceKnownOnServer(instance) {
+		const inst = Number(instance);
+		if (liveInstanceIds.has(inst)) return true;
+		let known = false;
+		clientEvents.forEach((info, quest) => {
+			if (Number(info.instance) !== inst) return;
+			if (!liveQuestIds.size || dungeonData.resolveLiveQuest([Number(quest)], liveQuestIds))
+				known = true;
+		});
+		return known;
+	}
+
 	function buildDungeonPage() {
+		loadServerDungeons();
+		const server = currentServer();
 		const scan = [{
 			command: "m dangscan",
 			name: liveQuestIds.size
-				? `Scan this server (${liveQuestIds.size} Vanguard events)`
-				: "Scan this server",
+				? `Scan ${server && server.name ? server.name : "this server"} (${liveQuestIds.size})`
+				: `Scan ${server && server.name ? server.name : "this server"}`,
 			color: dungeonData.C.y
 		}, {
 			command: "m tohw",
@@ -2093,26 +2164,45 @@ module.exports = function ProxyMenu(mod) {
 		if (teleportBusy) return;
 
 		if (!mod.settings.dungeonQuests) mod.settings.dungeonQuests = {};
-		const learned = Number(mod.settings.dungeonQuests[String(inst)]);
-		const tries = [];
-		const addTry = (value) => {
-			const n = Number(value);
-			if (!Number.isFinite(n) || n <= 0 || tries.includes(n)) return;
-			tries.push(n);
+		const allInstances = familyInstances(inst, dungeonData.displayName(inst));
+		const knownInstances = allInstances.filter(id => instanceKnownOnServer(id));
+		const order = knownInstances.length ? knownInstances : allInstances;
+		const pairs = [];
+		const addPair = (questId, instanceId) => {
+			const q = Number(questId);
+			const i = Number(instanceId);
+			if (!Number.isFinite(q) || q <= 0 || !Number.isFinite(i) || i <= 0) return;
+			if (pairs.some(pair => pair.quest === q && pair.instance === i)) return;
+			if (pairs.length >= 8) return;
+			pairs.push({ quest: q, instance: i });
 		};
-		liveQuestIds.forEach(id => {
-			if (questMapsToInstance(id, inst)) addTry(id);
+		order.forEach(i => {
+			const quests = [];
+			const addQuest = (value) => {
+				const n = Number(value);
+				if (!Number.isFinite(n) || n <= 0 || quests.includes(n)) return;
+				quests.push(n);
+			};
+			liveQuestIds.forEach(id => {
+				if (questMapsToInstance(id, i)) addQuest(id);
+			});
+			addQuest(mod.settings.dungeonQuests[String(i)]);
+			dungeonData.questsForInstance(i).forEach(id => {
+				dungeonData.variants(id).forEach(variant => {
+					if (!liveQuestIds.size || liveQuestIds.has(variant)) addQuest(variant);
+				});
+			});
+			(DUNGEON_QUEST_FALLBACKS[i] || []).forEach(addQuest);
+			if (i === inst) {
+				addQuest(primary);
+				dungeonData.variants(primary).forEach(variant => {
+					if (!liveQuestIds.size || liveQuestIds.has(variant)) addQuest(variant);
+				});
+			}
+			if (!quests.length) addQuest(primary);
+			quests.forEach(q => addPair(q, i));
 		});
-		addTry(learned);
-		addTry(primary);
-		dungeonData.variants(primary).forEach(addTry);
-		dungeonData.questsForInstance(inst).forEach(id => {
-			addTry(id);
-			if (liveQuestIds.has(id + dungeonData.QUEST_ID_MOD)) addTry(id + dungeonData.QUEST_ID_MOD);
-			if (liveQuestIds.has(id - dungeonData.QUEST_ID_MOD)) addTry(id - dungeonData.QUEST_ID_MOD);
-		});
-		(DUNGEON_QUEST_FALLBACKS[inst] || []).forEach(addTry);
-		addTry(inst);
+		if (!pairs.length) addPair(primary, inst);
 
 		teleportBusy = true;
 		let step = 0;
@@ -2129,8 +2219,8 @@ module.exports = function ProxyMenu(mod) {
 			}
 			try { mod.unhook(zoneHook); } catch (_) {}
 			if (ok) {
-				const used = tries[Math.max(0, step - 1)];
-				rememberDungeonQuest(used, inst);
+				const used = pairs[Math.max(0, step - 1)];
+				if (used) rememberDungeonQuest(used.quest, used.instance);
 			} else {
 				mod.command.message("Dungeon teleport failed. Open Vanguard and click Go once so the menu can learn this dungeon.");
 			}
@@ -2142,11 +2232,11 @@ module.exports = function ProxyMenu(mod) {
 
 		const tryOne = () => {
 			if (done) return;
-			if (step >= tries.length) {
+			if (step >= pairs.length) {
 				finish(false);
 				return;
 			}
-			sendEventTeleport(tries[step], inst);
+			sendEventTeleport(pairs[step].quest, pairs[step].instance);
 			step += 1;
 			timer = mod.setTimeout(tryOne, 450);
 		};
